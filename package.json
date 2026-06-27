@@ -1,0 +1,17 @@
+{
+  "name": "litert-lm-chat",
+  "version": "1.0.0",
+  "description": "Fully local, cached WebGPU LLM Chat Runner using LiteRT-LM",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "test": "node test/state.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@litert-lm/core": "^0.13.1"
+  }
+}
