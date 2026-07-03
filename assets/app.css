@@ -353,7 +353,6 @@ select:focus, input:focus {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 1;
   max-height: 220px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -414,11 +413,6 @@ select:focus, input:focus {
   border: 1px dashed var(--teal);
   margin-bottom: 6px;
   font-weight: bold;
-}
-
-.new-chat-item:hover {
-  background-color: rgba(0, 201, 158, 0.08) !important;
-  color: var(--teal) !important;
 }
 
 .new-chat-item:not(.active):hover {
