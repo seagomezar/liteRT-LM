@@ -6,12 +6,17 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
-    "test": "node test/state.test.js"
+    "test": "node test/state.test.js",
+    "test:e2e": "start-server-and-test dev http://localhost:5173 \"cypress run\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@litert-lm/core": "^0.13.1"
+  },
+  "devDependencies": {
+    "cypress": "^15.18.0",
+    "start-server-and-test": "^2.0.0"
   }
 }

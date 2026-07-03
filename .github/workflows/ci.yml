@@ -1,0 +1,34 @@
+name: CI
+
+# Fast, fully-mocked gate. No WebGPU and no real model download happen here;
+# the real runtime paths are verified manually on the deployed Pages site
+# (see SPEC.md section 5.3).
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: E2E tests (Cypress)
+        # start-server-and-test boots server.js on :5173, waits for it,
+        # runs Cypress headlessly, then tears the server down.
+        run: npm run test:e2e

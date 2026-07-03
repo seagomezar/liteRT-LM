@@ -97,9 +97,9 @@ describe('LiteRT-LM WebGPU Chat UI E2E Tests', () => {
   it('submits a quick starter prompt and displays conversation message bubbles', () => {
     cy.contains('Explain WebGPU').click();
     cy.get('.message-bubble.user').should('contain', 'Explain WebGPU');
-    
-    // Wait for the mocked response delay
-    cy.wait(100);
+
+    // The retrying assertion below waits for the mocked async response;
+    // no fixed cy.wait needed.
     cy.get('.message-bubble.assistant').should('contain', 'This is a mocked response');
     cy.get('.thought-details').should('contain', 'Stubbed thinking phase.');
     cy.get('.message-stats').should('contain', 'dec: 45 tk/s');
@@ -109,12 +109,10 @@ describe('LiteRT-LM WebGPU Chat UI E2E Tests', () => {
     cy.get('#chat-input-textarea').type('Hello local bot{enter}');
     cy.get('.message-bubble.user').should('contain', 'Hello local bot');
 
-    cy.wait(100);
     cy.get('.message-bubble.assistant').should('be.visible');
 
     // Click retry
     cy.contains('Retry').click();
-    cy.wait(100);
     cy.get('.message-bubble.assistant').should('be.visible');
 
     // Click edit (rewind)
@@ -149,7 +147,7 @@ describe('LiteRT-LM WebGPU Chat UI E2E Tests', () => {
 
     // Query with RAG keyword
     cy.get('#chat-input-textarea').type('What is the secret key code?{enter}');
-    cy.wait(100);
+    cy.get('.message-bubble.user').should('contain', 'What is the secret key code?');
 
     // Delete document
     cy.get('.delete-doc-btn').click();
@@ -202,7 +200,6 @@ describe('LiteRT-LM WebGPU Chat UI E2E Tests', () => {
 
   it('starts new conversations and toggles items list', () => {
     cy.get('#chat-input-textarea').type('Thread 1 message{enter}');
-    cy.wait(100);
 
     cy.get('.conversations-list').should('contain', 'Thread 1 message');
     
@@ -221,7 +218,6 @@ describe('LiteRT-LM WebGPU Chat UI E2E Tests', () => {
 
   it('supports renaming conversations in the sidebar and persisting changes', () => {
     cy.get('#chat-input-textarea').type('Chat to rename{enter}');
-    cy.wait(100);
 
     // Initial check
     cy.get('.conversations-list').should('contain', 'Chat to rename');
