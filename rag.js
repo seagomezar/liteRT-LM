@@ -1,210 +1,15 @@
-// Local RAG System for LiteRT-LM Chat
-const STOP_WORDS = new Set([
-  'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', 'arent', 'as', 'at',
-  'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by', 'can', 'cant', 'cannot',
-  'could', 'couldnt', 'did', 'didnt', 'do', 'does', 'doesnt', 'doing', 'dont', 'down', 'during', 'each', 'few',
-  'for', 'from', 'further', 'had', 'hadnt', 'has', 'hasnt', 'have', 'havent', 'having', 'he', 'hed', 'hell', 'hes',
-  'her', 'here', 'heres', 'hers', 'herself', 'him', 'himself', 'his', 'how', 'hows', 'i', 'id', 'ill', 'im', 'ive',
-  'if', 'in', 'into', 'is', 'isnt', 'it', 'its', 'itself', 'lets', 'me', 'more', 'most', 'mustnt', 'my', 'myself',
-  'no', 'nor', 'not', 'of', 'off', 'on', 'once', 'only', 'or', 'other', 'ought', 'our', 'ours', 'ourselves', 'out',
-  'over', 'own', 'same', 'shant', 'she', 'shed', 'shell', 'shes', 'should', 'shouldnt', 'so', 'some', 'such',
-  'than', 'that', 'thats', 'the', 'their', 'theirs', 'them', 'themselves', 'then', 'there', 'theres', 'these',
-  'they', 'theyd', 'theyll', 'theyre', 'theyve', 'this', 'those', 'through', 'to', 'too', 'under', 'until', 'up',
-  'very', 'was', 'wasnt', 'we', 'wed', 'well', 'were', 'weve', 'werent', 'what', 'whats', 'when', 'whens', 'where',
-  'wheres', 'which', 'while', 'who', 'whos', 'whom', 'why', 'whys', 'with', 'wont', 'would', 'wouldnt', 'you',
-  'youd', 'youll', 'youre', 'youve', 'your', 'yours', 'yourself', 'yourselves'
-]);
-
-function tokenize(text) {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .split(/\s+/)
-    .filter(w => w.length > 1 && !STOP_WORDS.has(w));
-}
-
-class LocalRAGIndex {
-  constructor() {
-    this.documents = new Map(); // filename -> fullText
-    this.chunks = [];           // list of { id, filename, text, tokens }
-    this.idf = new Map();       // term -> IDF value
-    this.enabled = true;
-    this.listeners = [];
-    this.logs = [];             // Search logs for visual feedback
-  }
-
-  enable() {
-    this.enabled = true;
-    this.addLog('RAG System enabled.');
-    this.notifyUpdate();
-  }
-
-  disable() {
-    this.enabled = false;
-    this.addLog('RAG System disabled.');
-    this.notifyUpdate();
-  }
-
-  addListener(callback) {
-    this.listeners.push(callback);
-  }
-
-  notifyUpdate() {
-    for (const callback of this.listeners) {
-      try { callback(); } catch (err) { console.error(err); }
-    }
-  }
-
-  addDocument(filename, text) {
-    if (this.documents.has(filename)) {
-      this.removeDocument(filename); // Overwrite if it already exists
-    }
-    
-    this.documents.set(filename, text);
-
-    // Text chunking: 400 characters sliding window with 100 character overlap
-    const chunkSize = 400;
-    const overlap = 100;
-    let index = 0;
-    const docChunks = [];
-
-    while (index < text.length) {
-      const chunkText = text.substring(index, index + chunkSize).trim();
-      if (chunkText.length > 10) {
-        docChunks.push({
-          id: `${filename}-${index}`,
-          filename,
-          text: chunkText,
-          tokens: tokenize(chunkText)
-        });
-      }
-      index += chunkSize - overlap;
-      if (index >= text.length - overlap) break;
-    }
-
-    this.chunks = [...this.chunks, ...docChunks];
-    this.recalculateIDF();
-    this.addLog(`Document added: "${filename}" (${docChunks.length} chunks indexed)`);
-    this.notifyUpdate();
-  }
-
-  removeDocument(filename) {
-    if (!this.documents.has(filename)) return;
-    this.documents.delete(filename);
-    this.chunks = this.chunks.filter(c => c.filename !== filename);
-    this.recalculateIDF();
-    this.addLog(`Document removed: "${filename}"`);
-    this.notifyUpdate();
-  }
-
-  clearAll() {
-    this.documents.clear();
-    this.chunks = [];
-    this.idf.clear();
-    this.addLog('All documents cleared.');
-    this.notifyUpdate();
-  }
-
-  recalculateIDF() {
-    this.idf.clear();
-    const N = this.chunks.length;
-    if (N === 0) return;
-
-    const df = {};
-    for (const chunk of this.chunks) {
-      const uniqueTerms = new Set(chunk.tokens);
-      for (const term of uniqueTerms) {
-        df[term] = (df[term] || 0) + 1;
-      }
-    }
-
-    for (const term in df) {
-      // Standard BM25-friendly IDF formulation
-      this.idf.set(term, Math.log(1 + (N - df[term] + 0.5) / (df[term] + 0.5)));
-    }
-  }
-
-  search(query, k = 3) {
-    const queryTokens = tokenize(query);
-    if (queryTokens.length === 0 || this.chunks.length === 0) return [];
-
-    const queryTF = {};
-    for (const term of queryTokens) {
-      queryTF[term] = (queryTF[term] || 0) + 1;
-    }
-
-    const results = [];
-    for (const chunk of this.chunks) {
-      let score = 0;
-      
-      const chunkTF = {};
-      for (const term of chunk.tokens) {
-        chunkTF[term] = (chunkTF[term] || 0) + 1;
-      }
-
-      for (const term in queryTF) {
-        if (chunkTF[term]) {
-          const tfVal = chunkTF[term] / chunk.tokens.length; // Normalized Term Frequency
-          const idfVal = this.idf.get(term) || 0;
-          score += tfVal * idfVal * queryTF[term];
-        }
-      }
-
-      if (score > 0) {
-        results.push({ chunk, score });
-      }
-    }
-
-    // Sort by descending score
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, k);
-  }
-
-  getRagPrompt(query) {
-    if (!this.enabled || this.documents.size === 0) {
-      return query;
-    }
-    const matches = this.search(query, 3);
-    if (matches.length === 0) {
-      this.addLog(`Query: "${query}" -> No matching contexts found.`);
-      return query;
-    }
-
-    // Print matching details to logs
-    const logInfo = matches.map(m => `[Score: ${m.score.toFixed(3)}] ${m.chunk.filename}: "${m.chunk.text.substring(0, 45)}..."`).join('\n');
-    this.addLog(`Query: "${query}"\n${logInfo}`);
-    this.notifyUpdate();
-
-    const contextText = matches
-      .map((m, i) => `[Source Document: ${m.chunk.filename} (Match Score: ${m.score.toFixed(4)})]\n${m.chunk.text}`)
-      .join('\n\n---\n\n');
-
-    return `Context from uploaded documents:
-==================================================
-${contextText}
-==================================================
-
-Based on the context above, answer the question below. If the information is not in the context, answer using your general knowledge but indicate it was not found in the documents.
-
-Question: ${query}`;
-  }
-
-  addLog(message) {
-    const timestamp = new Date().toLocaleTimeString();
-    this.logs.unshift(`[${timestamp}] ${message}`);
-    if (this.logs.length > 20) this.logs.pop();
-  }
-}
-
-// Global instantiation
-window.ragIndex = new LocalRAGIndex();
-window.getRagPrompt = (query) => window.ragIndex.getRagPrompt(query);
-console.log('[RAG] Local RAG engine initialized successfully and hooked to window.getRagPrompt.');
+// RAG UI glue for LiteRT-LM Chat.
+//
+// The RAG core (tokenizer, LocalRAGIndex, TF-IDF search) lives in ./src/rag.js,
+// which is the single source of truth exercised by the unit tests. Importing it
+// here for its side effect binds `window.ragIndex` and `window.getRagPrompt`, so
+// this file only owns the sidebar UI and PDF ingestion built on top of that core.
+import "./src/rag.js";
 
 // Injects RAG UI Panel into sidebar when the container elements are added to DOM
 function initializeRagUI(panel) {
   panel.dataset.initialized = "true";
-  
+
   panel.innerHTML = `
     <div class="rag-container" style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; display: flex; flex-direction: column; gap: 10px;">
       <div class="rag-header" style="display: flex; justify-content: space-between; align-items: center; user-select: none;">
@@ -239,7 +44,7 @@ function initializeRagUI(panel) {
           transition: .3s;
           border-radius: 50%;
         }
-        
+
         .rag-upload-zone {
           border: 1px dashed var(--border);
           border-radius: 8px;
@@ -253,7 +58,7 @@ function initializeRagUI(panel) {
           border-color: var(--teal);
           background-color: rgba(0, 201, 158, 0.04);
         }
-        
+
         .rag-doc-item {
           display: flex;
           justify-content: space-between;
@@ -268,7 +73,7 @@ function initializeRagUI(panel) {
         .rag-doc-item:hover {
           border-color: rgba(0, 201, 158, 0.3);
         }
-        
+
         .rag-console-logs {
           background-color: #05070c;
           border: 1px solid var(--border);
@@ -312,66 +117,68 @@ function initializeRagUI(panel) {
     </div>
   `;
 
-  const toggle = panel.querySelector('#rag-toggle');
-  const fileInput = panel.querySelector('#rag-file-input');
-  const dropZone = panel.querySelector('#rag-drop-zone');
-  const docList = panel.querySelector('#rag-doc-list');
-  const docCount = panel.querySelector('#rag-doc-count');
-  const chunkCount = panel.querySelector('#rag-chunk-count');
-  const logsDiv = panel.querySelector('#rag-logs');
-  const clearLogsBtn = panel.querySelector('#rag-clear-logs');
-  
+  const toggle = panel.querySelector("#rag-toggle");
+  const fileInput = panel.querySelector("#rag-file-input");
+  const dropZone = panel.querySelector("#rag-drop-zone");
+  const docList = panel.querySelector("#rag-doc-list");
+  const docCount = panel.querySelector("#rag-doc-count");
+  const chunkCount = panel.querySelector("#rag-chunk-count");
+  const logsDiv = panel.querySelector("#rag-logs");
+  const clearLogsBtn = panel.querySelector("#rag-clear-logs");
+
   // Sync state
   toggle.checked = window.ragIndex.enabled;
-  
-  toggle.addEventListener('change', (e) => {
+
+  toggle.addEventListener("change", (e) => {
     if (e.target.checked) window.ragIndex.enable();
     else window.ragIndex.disable();
   });
-  
-  dropZone.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', handleFileSelect);
-  
-  dropZone.addEventListener('dragover', (e) => {
+
+  dropZone.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", handleFileSelect);
+
+  dropZone.addEventListener("dragover", (e) => {
     e.preventDefault();
-    dropZone.style.borderColor = 'var(--teal)';
+    dropZone.style.borderColor = "var(--teal)";
   });
-  
-  dropZone.addEventListener('dragleave', () => {
-    dropZone.style.borderColor = 'var(--border)';
+
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.style.borderColor = "var(--border)";
   });
-  
-  dropZone.addEventListener('drop', (e) => {
+
+  dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
-    dropZone.style.borderColor = 'var(--border)';
+    dropZone.style.borderColor = "var(--border)";
     if (e.dataTransfer.files) {
       handleFiles(e.dataTransfer.files);
     }
   });
 
-  clearLogsBtn.addEventListener('click', () => {
+  clearLogsBtn.addEventListener("click", () => {
     window.ragIndex.logs = [];
     renderLogs();
   });
-  
+
   function handleFileSelect(e) {
     if (e.target.files) {
       handleFiles(e.target.files);
     }
   }
-  
-  window.ragIndex.loadPdfJS = async function() {
+
+  window.ragIndex.loadPdfJS = async function () {
     if (window.pdfjsLib) return window.pdfjsLib;
-    
+
     return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+      const script = document.createElement("script");
+      script.src =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js";
       script.onload = () => {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
         resolve(window.pdfjsLib);
       };
       script.onerror = () => {
-        reject(new Error('Failed to load PDF.js from CDN.'));
+        reject(new Error("Failed to load PDF.js from CDN."));
       };
       document.head.appendChild(script);
     });
@@ -380,11 +187,13 @@ function initializeRagUI(panel) {
   function handleFiles(files) {
     for (const file of files) {
       if (file.size > 10 * 1024 * 1024) {
-        window.ragIndex.addLog(`Warning: "${file.name}" is too large (>10MB). Rejected.`);
+        window.ragIndex.addLog(
+          `Warning: "${file.name}" is too large (>10MB). Rejected.`,
+        );
         continue;
       }
       const lowerName = file.name.toLowerCase();
-      if (lowerName.endsWith('.pdf')) {
+      if (lowerName.endsWith(".pdf")) {
         window.ragIndex.addLog(`Processing PDF: "${file.name}"...`);
         const reader = new FileReader();
         reader.onload = async (event) => {
@@ -393,23 +202,29 @@ function initializeRagUI(panel) {
             const arrayBuffer = event.target.result;
             const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
-            
-            let fullText = '';
+
+            let fullText = "";
             for (let i = 1; i <= pdf.numPages; i++) {
               const page = await pdf.getPage(i);
               const textContent = await page.getTextContent();
-              const pageText = textContent.items.map(item => item.str).join(' ');
-              fullText += pageText + '\n';
+              const pageText = textContent.items
+                .map((item) => item.str)
+                .join(" ");
+              fullText += pageText + "\n";
             }
-            
+
             if (fullText.trim().length === 0) {
-              window.ragIndex.addLog(`Warning: No text extracted from PDF "${file.name}". Maybe it is scanned/image-only?`);
+              window.ragIndex.addLog(
+                `Warning: No text extracted from PDF "${file.name}". Maybe it is scanned/image-only?`,
+              );
             } else {
               window.ragIndex.addDocument(file.name, fullText);
             }
           } catch (err) {
             console.error(err);
-            window.ragIndex.addLog(`Error parsing PDF "${file.name}": ${err.message}`);
+            window.ragIndex.addLog(
+              `Error parsing PDF "${file.name}": ${err.message}`,
+            );
           }
         };
         reader.readAsArrayBuffer(file);
@@ -430,46 +245,48 @@ function initializeRagUI(panel) {
   });
 
   function updateUI() {
-    const contentDiv = panel.querySelector('.rag-content');
+    const contentDiv = panel.querySelector(".rag-content");
     if (window.ragIndex.enabled) {
-      contentDiv.style.opacity = '1';
-      contentDiv.style.pointerEvents = 'auto';
+      contentDiv.style.opacity = "1";
+      contentDiv.style.pointerEvents = "auto";
       toggle.checked = true;
     } else {
-      contentDiv.style.opacity = '0.5';
-      contentDiv.style.pointerEvents = 'none';
+      contentDiv.style.opacity = "0.5";
+      contentDiv.style.pointerEvents = "none";
       toggle.checked = false;
     }
 
     docCount.textContent = window.ragIndex.documents.size;
     chunkCount.textContent = window.ragIndex.chunks.length;
-    
-    docList.innerHTML = '';
+
+    docList.innerHTML = "";
     for (const [filename, text] of window.ragIndex.documents.entries()) {
-      const docChunks = window.ragIndex.chunks.filter(c => c.filename === filename);
-      const item = document.createElement('div');
-      item.className = 'rag-doc-item';
+      const docChunks = window.ragIndex.chunks.filter(
+        (c) => c.filename === filename,
+      );
+      const item = document.createElement("div");
+      item.className = "rag-doc-item";
       item.innerHTML = `
         <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px;" title="${filename}">
           ${filename} (${docChunks.length} chk)
         </span>
         <button class="delete-doc-btn" data-filename="${filename}" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.72rem; padding: 2px 4px;">✕</button>
       `;
-      item.querySelector('.delete-doc-btn').addEventListener('click', (e) => {
+      item.querySelector(".delete-doc-btn").addEventListener("click", (e) => {
         const fname = e.target.dataset.filename;
         window.ragIndex.removeDocument(fname);
       });
       docList.appendChild(item);
     }
-    
+
     renderLogs();
   }
 
   function renderLogs() {
     if (window.ragIndex.logs.length === 0) {
-      logsDiv.textContent = 'No logs.';
+      logsDiv.textContent = "No logs.";
     } else {
-      logsDiv.textContent = window.ragIndex.logs.join('\n');
+      logsDiv.textContent = window.ragIndex.logs.join("\n");
     }
   }
 
@@ -478,13 +295,13 @@ function initializeRagUI(panel) {
 
 // Observe DOM updates to initialize panel whenever litert-sidebar renders
 function startObserver() {
-  const panel = document.getElementById('rag-sidebar-panel');
+  const panel = document.getElementById("rag-sidebar-panel");
   if (panel && !panel.dataset.initialized) {
     initializeRagUI(panel);
   }
-  
+
   const observer = new MutationObserver(() => {
-    const p = document.getElementById('rag-sidebar-panel');
+    const p = document.getElementById("rag-sidebar-panel");
     if (p && !p.dataset.initialized) {
       initializeRagUI(p);
     }
@@ -492,8 +309,8 @@ function startObserver() {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', startObserver);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", startObserver);
 } else {
   startObserver();
 }
