@@ -52,15 +52,14 @@ Notes:
 
 ```
 liteRT-LM/
-├── index.html                 -> App shell; loads Phaser, RAG global, ESM bootstrap, CSS
+├── index.html                 -> App shell; loads Phaser, RAG global, ESM bootstrap; links assets/app.css (no inline styles)
 ├── manifest.json              -> PWA manifest
 ├── sw.js                      -> Service worker (does NOT cache the multi-GB model)
 ├── server.js                  -> Zero-dependency static dev server (PORT=5173)
 ├── rag.js                     -> RAG UI glue + PDF ingest; imports src/rag.js for the core engine
 ├── assets/
 │   ├── index-jzDBDxi2.js      -> ESM bootstrap: imports state.js + components.js
-│   ├── index-BEHUn5zE.css     -> Compiled app styles
-│   └── styles.css             -> Styles
+│   └── app.css                -> All app styles (consolidated from former inline block + hashed CSS)
 ├── src/
 │   ├── state.js               -> ChatStateManager: engine load/compile, inference,
 │   │                             conversations, TTS/STT SpeechQueue, language mapping
