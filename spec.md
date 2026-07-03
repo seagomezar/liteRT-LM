@@ -120,7 +120,8 @@ Code must run both in the Node.js mock test environment and the real WebGPU brow
 
 ### 5.3 Real-model verification - manual, on the deployed site
 
-CI is **fully mocked** (5.1 and 5.2). The real runtime paths that cannot run in CI - multi-GB model download, compilation via `@litert-lm/core`, and WebGPU inference - are verified **manually against the deployed GitHub Pages site**, not in an automated job.
+CI is **fully mocked** (5.1 and 5.2).
+The real runtime paths that cannot run in CI - multi-GB model download, compilation via `@litert-lm/core`, and WebGPU inference - are verified **manually against the deployed GitHub Pages site**, not in an automated job.
 
 There is deliberately **no** WebGPU/GPU-runner E2E job.
 This avoids self-hosted GPU-runner infrastructure and keeps CI fast, deterministic, and free.
@@ -156,7 +157,8 @@ Repository: `github.com/seagomezar/liteRT-LM` → Pages URL `https://seagomezar.
 After deploy, run the manual real-model verification against the live Pages site (Section 5.3).
 
 Deployment constraints:
-- GitHub Pages is static-only: no `server.js` at runtime, no server-side inference. All compute is client-side (this is the product's whole point).
+- GitHub Pages is static-only: no `server.js` at runtime, no server-side inference.
+All compute is client-side (this is the product's whole point).
 - The service worker must continue to **not** cache the model blob (already handled in `sw.js`).
 - Verify the deployed site loads under the `/liteRT-LM/` subpath before declaring success.
 
