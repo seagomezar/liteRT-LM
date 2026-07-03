@@ -55,7 +55,7 @@ liteRT-LM/
 ├── manifest.json              -> PWA manifest
 ├── sw.js                      -> Service worker (does NOT cache the multi-GB model)
 ├── server.js                  -> Zero-dependency static dev server (PORT=5173)
-├── rag.js                     -> Global RAG engine + RAG UI + PDF ingest (window.ragIndex)
+├── rag.js                     -> RAG UI glue + PDF ingest; imports src/rag.js for the core engine
 ├── assets/
 │   ├── index-jzDBDxi2.js      -> ESM bootstrap: imports state.js + components.js
 │   ├── index-BEHUn5zE.css     -> Compiled app styles
@@ -64,7 +64,8 @@ liteRT-LM/
 │   ├── state.js               -> ChatStateManager: engine load/compile, inference,
 │   │                             conversations, TTS/STT SpeechQueue, language mapping
 │   ├── components.js          -> Lit web components (chat window, sidebar, avatar, inputs)
-│   └── rag.js                 -> ESM RAG module (tokenize, LocalRAGIndex) used by unit tests
+│   └── rag.js                 -> RAG core (tokenize, LocalRAGIndex); single source of truth
+│                                 for both the running app and the unit tests
 ├── test/
 │   └── state.test.js          -> Unit tests (node:test) for RAG + ChatStateManager
 ├── cypress/
@@ -75,16 +76,15 @@ liteRT-LM/
 └── SPEC.md                    -> This living specification
 ```
 
-### Known structural issue to resolve
+### RAG source-of-truth (reconciled)
 
-There are **two RAG implementations** that have drifted:
+The RAG implementation is split into two files with clearly separated responsibilities:
 
-- `rag.js` (repo root) - a browser global (`window.ragIndex` / `window.getRagPrompt`) with the RAG UI and PDF ingestion, loaded by `index.html`.
-- `src/rag.js` - an ESM module (`export function tokenize`, `export class LocalRAGIndex`) imported by the unit tests.
+- `src/rag.js` - the RAG core (`tokenize`, `LocalRAGIndex`, `window.ragIndex` / `window.getRagPrompt` bindings).
+This is the **single source of truth** used by both the running app and the unit tests.
+- `rag.js` (repo root) - UI glue only: imports `./src/rag.js` and layers the sidebar panel and PDF ingestion on top.
 
-**The unit tests exercise `src/rag.js`, but the running app uses `rag.js`.**
-This means RAG can pass tests while the shipped behavior differs.
-Part of this work is to reconcile these into a single source of truth (extract the shared core into `src/rag.js`, have the root file consume it) so tests actually cover what ships.
+The unit tests import `src/rag.js` directly, so test coverage reflects the code that ships.
 
 ## 4. Code Style & Conventions
 
@@ -108,8 +108,9 @@ Code must run both in the Node.js mock test environment and the real WebGPU brow
 - Deterministic and fully mocked; no network, no WebGPU, no real model.
 - Mock `@litert-lm/core` to cover both current and legacy API shapes (`loadLiteRtLm`, `LiteRtLm.DEFAULT_WASM_PATH`, `Engine.create`) so tests stay backwards compatible.
 - Cover: RAG tokenization/indexing/retrieval, `ChatStateManager` state transitions, cancellation (AbortController), conversation persistence + rename, sampler param construction (greedy/top-k/top-p), speech queue splitting/queuing, selective audio stop, language mapping (BCP 47) and prompt-language injection, and continuous STT transcript accumulation + error reporting.
-- **Baseline:** currently 46 tests passing. This must stay green; new features add tests.
-- **Action item:** once RAG is reconciled to a single source (Section 3), unit tests must import the same module the app ships, so RAG coverage is real.
+- **Baseline:** currently 46 tests passing.
+This must stay green; new features add tests.
+- RAG is reconciled (see Section 3): unit tests import `src/rag.js`, the same module the app ships.
 
 ### 5.2 E2E tests (Cypress) - the UI gate
 
@@ -168,7 +169,7 @@ All compute is client-side (this is the product's whole point).
 - Keep the unit suite (`npm test`) and E2E suite (`npx cypress run`) green before merge.
 - Use relative asset paths so the app works under the Pages subpath.
 - Feature-detect and degrade gracefully for WebGPU and speech APIs.
-- Reconcile RAG to a single source of truth so tests cover shipped behavior.
+- Keep `src/rag.js` as the single RAG source of truth; do not re-introduce a parallel implementation in `rag.js`.
 - Fix flakiness, lint issues, and test failures you encounter, even if incidental.
 - Reproduce bugs in an E2E setting (as an end user would hit them) before fixing.
 
@@ -196,12 +197,12 @@ Removal is limited to the PRD file.
 
 ## 9. Success Criteria
 
-- [ ] `BrowserDJ AI - PRD y Blueprint de Ingenieria.md` deleted; no DJ references remain (outside this spec's mention).
-- [ ] RAG reconciled to a single source of truth; unit tests import the same module the app ships.
-- [ ] `npm test` green with unit coverage for RAG, model load/compile mocks, inference, and all existing features.
-- [ ] `npx cypress run` green, with flaky `cy.wait` timers replaced by assertions where they caused instability.
-- [ ] GitHub Actions PR workflow runs unit + E2E as required checks (fully mocked; no GPU runner).
-- [ ] GitHub Actions deploy workflow publishes to GitHub Pages on merge to `master`; deployed site verified loading under `/liteRT-LM/`.
+- [x] `BrowserDJ AI - PRD y Blueprint de Ingenieria.md` deleted; no DJ references remain (outside this spec's mention).
+- [x] RAG reconciled to a single source of truth; unit tests import the same module the app ships.
+- [x] `npm test` green with unit coverage for RAG, model load/compile mocks, inference, and all existing features.
+- [x] `npx cypress run` green, with flaky `cy.wait` timers replaced by assertions where they caused instability.
+- [x] GitHub Actions PR workflow runs unit + E2E as required checks (fully mocked; no GPU runner).
+- [x] GitHub Actions deploy workflow publishes to GitHub Pages on merge to `master`; deployed site verified loading under `/liteRT-LM/`.
 - [ ] Manual real-model checklist (Section 5.3) documented and run against the live Pages site after deploy.
 
 ## 10. Open Questions
