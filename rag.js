@@ -4,7 +4,7 @@
 // which is the single source of truth exercised by the unit tests. Importing it
 // here for its side effect binds `window.ragIndex` and `window.getRagPrompt`, so
 // this file only owns the sidebar UI and PDF ingestion built on top of that core.
-import './src/rag.js';
+import "./src/rag.js";
 
 // Injects RAG UI Panel into sidebar when the container elements are added to DOM
 function initializeRagUI(panel) {
@@ -117,44 +117,44 @@ function initializeRagUI(panel) {
     </div>
   `;
 
-  const toggle = panel.querySelector('#rag-toggle');
-  const fileInput = panel.querySelector('#rag-file-input');
-  const dropZone = panel.querySelector('#rag-drop-zone');
-  const docList = panel.querySelector('#rag-doc-list');
-  const docCount = panel.querySelector('#rag-doc-count');
-  const chunkCount = panel.querySelector('#rag-chunk-count');
-  const logsDiv = panel.querySelector('#rag-logs');
-  const clearLogsBtn = panel.querySelector('#rag-clear-logs');
+  const toggle = panel.querySelector("#rag-toggle");
+  const fileInput = panel.querySelector("#rag-file-input");
+  const dropZone = panel.querySelector("#rag-drop-zone");
+  const docList = panel.querySelector("#rag-doc-list");
+  const docCount = panel.querySelector("#rag-doc-count");
+  const chunkCount = panel.querySelector("#rag-chunk-count");
+  const logsDiv = panel.querySelector("#rag-logs");
+  const clearLogsBtn = panel.querySelector("#rag-clear-logs");
 
   // Sync state
   toggle.checked = window.ragIndex.enabled;
 
-  toggle.addEventListener('change', (e) => {
+  toggle.addEventListener("change", (e) => {
     if (e.target.checked) window.ragIndex.enable();
     else window.ragIndex.disable();
   });
 
-  dropZone.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', handleFileSelect);
+  dropZone.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", handleFileSelect);
 
-  dropZone.addEventListener('dragover', (e) => {
+  dropZone.addEventListener("dragover", (e) => {
     e.preventDefault();
-    dropZone.style.borderColor = 'var(--teal)';
+    dropZone.style.borderColor = "var(--teal)";
   });
 
-  dropZone.addEventListener('dragleave', () => {
-    dropZone.style.borderColor = 'var(--border)';
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.style.borderColor = "var(--border)";
   });
 
-  dropZone.addEventListener('drop', (e) => {
+  dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
-    dropZone.style.borderColor = 'var(--border)';
+    dropZone.style.borderColor = "var(--border)";
     if (e.dataTransfer.files) {
       handleFiles(e.dataTransfer.files);
     }
   });
 
-  clearLogsBtn.addEventListener('click', () => {
+  clearLogsBtn.addEventListener("click", () => {
     window.ragIndex.logs = [];
     renderLogs();
   });
@@ -165,18 +165,20 @@ function initializeRagUI(panel) {
     }
   }
 
-  window.ragIndex.loadPdfJS = async function() {
+  window.ragIndex.loadPdfJS = async function () {
     if (window.pdfjsLib) return window.pdfjsLib;
 
     return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+      const script = document.createElement("script");
+      script.src =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js";
       script.onload = () => {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
         resolve(window.pdfjsLib);
       };
       script.onerror = () => {
-        reject(new Error('Failed to load PDF.js from CDN.'));
+        reject(new Error("Failed to load PDF.js from CDN."));
       };
       document.head.appendChild(script);
     });
@@ -185,11 +187,13 @@ function initializeRagUI(panel) {
   function handleFiles(files) {
     for (const file of files) {
       if (file.size > 10 * 1024 * 1024) {
-        window.ragIndex.addLog(`Warning: "${file.name}" is too large (>10MB). Rejected.`);
+        window.ragIndex.addLog(
+          `Warning: "${file.name}" is too large (>10MB). Rejected.`,
+        );
         continue;
       }
       const lowerName = file.name.toLowerCase();
-      if (lowerName.endsWith('.pdf')) {
+      if (lowerName.endsWith(".pdf")) {
         window.ragIndex.addLog(`Processing PDF: "${file.name}"...`);
         const reader = new FileReader();
         reader.onload = async (event) => {
@@ -199,22 +203,28 @@ function initializeRagUI(panel) {
             const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
 
-            let fullText = '';
+            let fullText = "";
             for (let i = 1; i <= pdf.numPages; i++) {
               const page = await pdf.getPage(i);
               const textContent = await page.getTextContent();
-              const pageText = textContent.items.map(item => item.str).join(' ');
-              fullText += pageText + '\n';
+              const pageText = textContent.items
+                .map((item) => item.str)
+                .join(" ");
+              fullText += pageText + "\n";
             }
 
             if (fullText.trim().length === 0) {
-              window.ragIndex.addLog(`Warning: No text extracted from PDF "${file.name}". Maybe it is scanned/image-only?`);
+              window.ragIndex.addLog(
+                `Warning: No text extracted from PDF "${file.name}". Maybe it is scanned/image-only?`,
+              );
             } else {
               window.ragIndex.addDocument(file.name, fullText);
             }
           } catch (err) {
             console.error(err);
-            window.ragIndex.addLog(`Error parsing PDF "${file.name}": ${err.message}`);
+            window.ragIndex.addLog(
+              `Error parsing PDF "${file.name}": ${err.message}`,
+            );
           }
         };
         reader.readAsArrayBuffer(file);
@@ -235,32 +245,34 @@ function initializeRagUI(panel) {
   });
 
   function updateUI() {
-    const contentDiv = panel.querySelector('.rag-content');
+    const contentDiv = panel.querySelector(".rag-content");
     if (window.ragIndex.enabled) {
-      contentDiv.style.opacity = '1';
-      contentDiv.style.pointerEvents = 'auto';
+      contentDiv.style.opacity = "1";
+      contentDiv.style.pointerEvents = "auto";
       toggle.checked = true;
     } else {
-      contentDiv.style.opacity = '0.5';
-      contentDiv.style.pointerEvents = 'none';
+      contentDiv.style.opacity = "0.5";
+      contentDiv.style.pointerEvents = "none";
       toggle.checked = false;
     }
 
     docCount.textContent = window.ragIndex.documents.size;
     chunkCount.textContent = window.ragIndex.chunks.length;
 
-    docList.innerHTML = '';
+    docList.innerHTML = "";
     for (const [filename, text] of window.ragIndex.documents.entries()) {
-      const docChunks = window.ragIndex.chunks.filter(c => c.filename === filename);
-      const item = document.createElement('div');
-      item.className = 'rag-doc-item';
+      const docChunks = window.ragIndex.chunks.filter(
+        (c) => c.filename === filename,
+      );
+      const item = document.createElement("div");
+      item.className = "rag-doc-item";
       item.innerHTML = `
         <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px;" title="${filename}">
           ${filename} (${docChunks.length} chk)
         </span>
         <button class="delete-doc-btn" data-filename="${filename}" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.72rem; padding: 2px 4px;">✕</button>
       `;
-      item.querySelector('.delete-doc-btn').addEventListener('click', (e) => {
+      item.querySelector(".delete-doc-btn").addEventListener("click", (e) => {
         const fname = e.target.dataset.filename;
         window.ragIndex.removeDocument(fname);
       });
@@ -272,9 +284,9 @@ function initializeRagUI(panel) {
 
   function renderLogs() {
     if (window.ragIndex.logs.length === 0) {
-      logsDiv.textContent = 'No logs.';
+      logsDiv.textContent = "No logs.";
     } else {
-      logsDiv.textContent = window.ragIndex.logs.join('\n');
+      logsDiv.textContent = window.ragIndex.logs.join("\n");
     }
   }
 
@@ -283,13 +295,13 @@ function initializeRagUI(panel) {
 
 // Observe DOM updates to initialize panel whenever litert-sidebar renders
 function startObserver() {
-  const panel = document.getElementById('rag-sidebar-panel');
+  const panel = document.getElementById("rag-sidebar-panel");
   if (panel && !panel.dataset.initialized) {
     initializeRagUI(panel);
   }
 
   const observer = new MutationObserver(() => {
-    const p = document.getElementById('rag-sidebar-panel');
+    const p = document.getElementById("rag-sidebar-panel");
     if (p && !p.dataset.initialized) {
       initializeRagUI(p);
     }
@@ -297,8 +309,8 @@ function startObserver() {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', startObserver);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", startObserver);
 } else {
   startObserver();
 }

@@ -7,12 +7,12 @@ Harden and ship the existing **LiteRT-LM WebGPU Chat** application: a fully loca
 This effort has three concrete goals:
 
 1. **Robust testing.**
-Establish a reliable, deterministic unit + E2E test strategy for the chat app so that regressions are caught before merge.
+   Establish a reliable, deterministic unit + E2E test strategy for the chat app so that regressions are caught before merge.
 2. **Verify the core runtime paths.**
-Ensure RAG indexing/retrieval, model download, and model compilation actually work end to end.
-CI covers these against mocks; the real WebGPU/model paths are verified manually on the deployed site.
+   Ensure RAG indexing/retrieval, model download, and model compilation actually work end to end.
+   CI covers these against mocks; the real WebGPU/model paths are verified manually on the deployed site.
 3. **Deploy pipeline.**
-Set up GitHub Actions to gate on tests and deploy the static site to GitHub Pages on merge to `master`.
+   Set up GitHub Actions to gate on tests and deploy the static site to GitHub Pages on merge to `master`.
 
 Out of scope: the **BrowserDJ AI / "DJ in the edge"** concept.
 That is a separate project and its PRD is removed from this repo as part of this work (see Section 8).
@@ -20,7 +20,7 @@ That is a separate project and its PRD is removed from this repo as part of this
 ### Target users
 
 - **End users:** People running a private, offline LLM chat in their browser (no server inference, no data leaving the device).
-They value privacy, resilience to connectivity loss, and a polished voice/avatar experience.
+  They value privacy, resilience to connectivity loss, and a polished voice/avatar experience.
 - **Developers/maintainers:** Contributors who need a green, trustworthy test suite and a hands-off deploy so shipping is safe and boring.
 
 ## 2. Commands
@@ -43,8 +43,9 @@ npx cypress open
 ```
 
 Notes:
+
 - The dev server (`server.js`) is a zero-dependency static file server used for local development and as the Cypress `baseUrl`.
-It is **not** part of the deployed artifact - GitHub Pages serves the static files directly.
+  It is **not** part of the deployed artifact - GitHub Pages serves the static files directly.
 - Cypress `baseUrl` is `http://localhost:5173`, which matches `server.js`'s default `PORT`.
 
 ## 3. Project Structure
@@ -81,7 +82,7 @@ liteRT-LM/
 The RAG implementation is split into two files with clearly separated responsibilities:
 
 - `src/rag.js` - the RAG core (`tokenize`, `LocalRAGIndex`, `window.ragIndex` / `window.getRagPrompt` bindings).
-This is the **single source of truth** used by both the running app and the unit tests.
+  This is the **single source of truth** used by both the running app and the unit tests.
 - `rag.js` (repo root) - UI glue only: imports `./src/rag.js` and layers the sidebar panel and PDF ingestion on top.
 
 The unit tests import `src/rag.js` directly, so test coverage reflects the code that ships.
@@ -90,15 +91,15 @@ The unit tests import `src/rag.js` directly, so test coverage reflects the code 
 
 - **Modern ES Modules**, clean and well-commented. Match the existing idiom in `src/`.
 - **Zero build step, CDN-first.**
-Runtime dependencies (Lit, `@litert-lm/core`, `marked`, `highlight.js`, Phaser, pdf.js) load from CDN ESM/script tags.
-Do not introduce a bundler without explicit approval (see Boundaries).
+  Runtime dependencies (Lit, `@litert-lm/core`, `marked`, `highlight.js`, Phaser, pdf.js) load from CDN ESM/script tags.
+  Do not introduce a bundler without explicit approval (see Boundaries).
 - **Relative asset paths only** (`./assets/...`).
-This is required for the app to work under the GitHub Pages project subpath (`/liteRT-LM/`).
-Never hardcode absolute root paths (`/assets/...`).
+  This is required for the app to work under the GitHub Pages project subpath (`/liteRT-LM/`).
+  Never hardcode absolute root paths (`/assets/...`).
 - **Graceful degradation.**
-Feature-detect experimental browser APIs (WebGPU, `speechSynthesis`, `SpeechRecognition`, File System Access) and degrade with console warnings + disabled UI rather than crashing.
+  Feature-detect experimental browser APIs (WebGPU, `speechSynthesis`, `SpeechRecognition`, File System Access) and degrade with console warnings + disabled UI rather than crashing.
 - **Environment parity.**
-Code must run both in the Node.js mock test environment and the real WebGPU browser environment; guard browser-only globals.
+  Code must run both in the Node.js mock test environment and the real WebGPU browser environment; guard browser-only globals.
 - **Markdown docs:** one sentence per physical line; plain `-` dashes, never em dashes.
 
 ## 5. Testing Strategy
@@ -109,7 +110,7 @@ Code must run both in the Node.js mock test environment and the real WebGPU brow
 - Mock `@litert-lm/core` to cover both current and legacy API shapes (`loadLiteRtLm`, `LiteRtLm.DEFAULT_WASM_PATH`, `Engine.create`) so tests stay backwards compatible.
 - Cover: RAG tokenization/indexing/retrieval, `ChatStateManager` state transitions, cancellation (AbortController), conversation persistence + rename, sampler param construction (greedy/top-k/top-p), speech queue splitting/queuing, selective audio stop, language mapping (BCP 47) and prompt-language injection, and continuous STT transcript accumulation + error reporting.
 - **Baseline:** currently 46 tests passing.
-This must stay green; new features add tests.
+  This must stay green; new features add tests.
 - RAG is reconciled (see Section 3): unit tests import `src/rag.js`, the same module the app ships.
 
 ### 5.2 E2E tests (Cypress) - the UI gate
@@ -129,6 +130,7 @@ This avoids self-hosted GPU-runner infrastructure and keeps CI fast, determinist
 The tradeoff is that real model/inference regressions are caught by the manual pass below rather than by CI.
 
 **Manual checklist (run against `https://seagomezar.github.io/liteRT-LM/` after each deploy):**
+
 - Cold model download completes and streams to storage.
 - Warm reload recovers the model instantly from cache (no re-download).
 - Model compiles and a real prompt produces streamed tokens (TTFT sanity check).
@@ -146,26 +148,30 @@ Repository: `github.com/seagomezar/liteRT-LM` → Pages URL `https://seagomezar.
 ### Pipeline shape: test-gate, then deploy
 
 **On pull requests to `master`:**
+
 1. Checkout, `npm ci`.
 2. `npm test` (unit) - must pass.
 3. Start `server.js`, run `npx cypress run` (E2E) - must pass.
 4. These are **required status checks**; a red suite blocks merge.
 
 **On push/merge to `master`:**
+
 1. Re-run the test gate.
 2. On success, publish the static site (repo root static files: `index.html`, `assets/`, `rag.js`, `sw.js`, `manifest.json`, `icons/`, `src/`) to GitHub Pages using the official Pages actions (`upload-pages-artifact` + `deploy-pages`) with the correct `permissions` (`pages: write`, `id-token: write`) and a `github-pages` environment.
 
 After deploy, run the manual real-model verification against the live Pages site (Section 5.3).
 
 Deployment constraints:
+
 - GitHub Pages is static-only: no `server.js` at runtime, no server-side inference.
-All compute is client-side (this is the product's whole point).
+  All compute is client-side (this is the product's whole point).
 - The service worker must continue to **not** cache the model blob (already handled in `sw.js`).
 - Verify the deployed site loads under the `/liteRT-LM/` subpath before declaring success.
 
 ## 7. Boundaries
 
 ### Always
+
 - Keep the unit suite (`npm test`) and E2E suite (`npx cypress run`) green before merge.
 - Use relative asset paths so the app works under the Pages subpath.
 - Feature-detect and degrade gracefully for WebGPU and speech APIs.
@@ -174,12 +180,14 @@ All compute is client-side (this is the product's whole point).
 - Reproduce bugs in an E2E setting (as an end user would hit them) before fixing.
 
 ### Ask first
+
 - Adding any new runtime dependency or introducing a bundler/build step (breaks the zero-build, CDN-first architecture).
 - Changing the model, the `@litert-lm/core` major version, or the CDN sources.
 - Significant restyling or UI layout changes.
 - Removing or archiving the existing chat app code.
 
 ### Never
+
 - Skip, disable, or delete tests to make the suite pass - fix the code or the mocks instead.
 - Report a false green: if a step was skipped, mocked, or truncated, say so.
 - Add server-side inference or any dependency on a remote compute backend (violates the offline/private product promise).
@@ -192,7 +200,7 @@ BrowserDJ AI is a separate project and must not live in this repo.
 
 - **Delete** `BrowserDJ AI - PRD y Blueprint de Ingenieria.md`.
 - Investigation confirms there is currently **no DJ-specific code or assets** in the repo (no Elementary Audio, DSP graph, AudioWorklet, or mixdown references outside the PRD).
-Removal is limited to the PRD file.
+  Removal is limited to the PRD file.
 - If any DJ-only code surfaces later, remove it too, keeping only what the chat app uses.
 
 ## 9. Success Criteria
@@ -208,7 +216,7 @@ Removal is limited to the PRD file.
 ## 10. Open Questions
 
 - **Manual-check model:** Which model + weights the manual checklist (Section 5.3) exercises on the deployed site.
-Defaults to whatever the app ships as its default model unless specified otherwise.
+  Defaults to whatever the app ships as its default model unless specified otherwise.
 
 ---
 
@@ -218,22 +226,29 @@ The following records the completed feature iterations that built the current ch
 Preserved for context; not part of the active plan above.
 
 ### Iteration: API Alignment & Bug Fix (completed)
+
 Aligned `src/state.js` with `@litert-lm/core@0.13.1`: use `loadLiteRtLm` + `LiteRtLm.DEFAULT_WASM_PATH` (not `loadWasmModule`), `Engine.create` (not `Engine.createEngine`), and a safe `getTokenizer()` fallback word-split estimator.
 
 ### Iteration: Greedy Sampler Top-K Fix (completed)
+
 Conditional `samplerParams`: greedy uses `k=1`, `p=1.0`, `temperature=0.0` to satisfy engine validation.
 
 ### Iteration: Chat Retitling & Persistence (completed)
+
 `renameConversation(id, newTitle)` with inline sidebar edit (Enter/blur/checkmark to save, Escape/cancel to abort), persisted to `localStorage`.
 
 ### Iteration: Phaser Talking Avatar & Voice (completed)
+
 Procedural Phaser avatar above the timeline; TTS via `speechSynthesis` speaking streamed sentences; STT via `SpeechRecognition` with a mic toggle; mouth-flap synced to `isSpeaking`; graceful degradation when speech APIs are unavailable.
 
 ### Iteration: Multilingual Support (completed)
+
 Language dropdown persisted as `chatLanguage`; BCP 47 mapping (en-US, es-ES, fr-FR, de-DE, zh-CN, ja-JP, pt-BR, it-IT) applied to STT `recognition.lang`, TTS utterance/voice, and a prompt postfix constraining the response language.
 
 ### Iteration: Selective Audio Stop (completed)
+
 `stopSpeechOnly()` clears the SpeechQueue and sets `isSpeechMutedForCurrentResponse` so audio stops without interrupting text generation; reset on the next `sendMessage`; "Stop Audio" button on the avatar card while speaking.
 
 ### Iteration: Continuous STT Robustness (completed)
+
 `recognition.continuous = true`, `onresult` loops from index 0 to accumulate transcripts across a continuous session, and `onerror` surfaces a descriptive `statusText`.
