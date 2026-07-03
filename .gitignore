@@ -13,3 +13,6 @@ _site/
 
 # OS / editor noise
 .DS_Store
+
+# Local agent tooling state
+.claude-dad/
