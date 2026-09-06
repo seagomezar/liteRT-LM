@@ -8,9 +8,19 @@ import { ragIndex } from './rag.js';
 
 // Setup marked renderer with Punch-Card code block styling
 const renderer = new marked.Renderer();
-renderer.code = function({ text, lang }) {
-  const codeText = text;
-  let language = lang ? lang.toLowerCase() : "";
+renderer.code = function(arg1, infostring) {
+  let codeText = "";
+  let language = "";
+  
+  if (typeof arg1 === "object" && arg1 !== null) {
+    codeText = String(arg1.text || "");
+    language = String(arg1.lang || "");
+  } else {
+    codeText = typeof arg1 === "string" ? arg1 : String(arg1 || "");
+    language = typeof infostring === "string" ? infostring : "";
+  }
+  
+  language = language.trim().toLowerCase();
   let highlighted = "";
   
   try {
@@ -22,7 +32,7 @@ renderer.code = function({ text, lang }) {
       if (!language) language = autoHighlight.language || "code";
     }
   } catch (err) {
-    highlighted = codeText
+    highlighted = (codeText || "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
@@ -715,6 +725,14 @@ export class LiteRTChatWindow extends LitElement {
         });
       }
     };
+  }
+
+  updated(changedProperties) {
+    super.updated(changedProperties);
+    const scrollArea = this.querySelector('.chat-scroll-area');
+    if (scrollArea) {
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+    }
   }
 
   handlePromptSubmit(e) {

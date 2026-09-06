@@ -822,14 +822,9 @@ export class ChatStateManager {
   }
 
   async sendMessage(prompt) {
-    if (this.isGenerating || !prompt.trim() || typeof window === 'undefined') return;
+    if (this.isGenerating || !prompt || !prompt.trim() || typeof window === 'undefined') return;
     
-    // Auto-load weights if engine doesn't exist
-    if (!this.engine || !this.activeConversation) {
-      await this.loadModelWeights();
-      if (!this.engine || !this.activeConversation) return;
-    }
-    
+    const cleanPrompt = prompt.trim();
     this.isGenerating = true;
     this.isCancelled = false;
     this.isSpeechMutedForCurrentResponse = false;
@@ -839,21 +834,23 @@ export class ChatStateManager {
     let tokensCountStr = "-";
     if (this.sharedTokenizer) {
       try {
-        tokensCountStr = this.sharedTokenizer.encode(prompt).length.toString();
+        tokensCountStr = this.sharedTokenizer.encode(cleanPrompt).length.toString();
       } catch (_) {}
     } else {
-      tokensCountStr = Math.round(prompt.trim().split(/\s+/).filter(Boolean).length * 1.3).toString();
+      tokensCountStr = Math.round(cleanPrompt.split(/\s+/).filter(Boolean).length * 1.3).toString();
     }
     
+    // 1. Immediately push user message so it is instantly rendered on screen
     const userMsg = {
       role: "user",
-      text: prompt,
+      text: cleanPrompt,
       senderName: "User",
       tokensCount: tokensCountStr
     };
     this.messages.push(userMsg);
     this.commitActiveChatHistory();
     
+    // 2. Immediately push assistant placeholder card
     const botMsg = {
       role: "assistant",
       text: "",
@@ -864,6 +861,32 @@ export class ChatStateManager {
     this.requestUpdate();
     
     const botIndex = this.messages.length - 1;
+    
+    // 3. Auto-load weights if engine doesn't exist
+    if (!this.engine || !this.activeConversation) {
+      this.statusText = "Loading model weights & compiling shaders...";
+      this.messages[botIndex].text = "*[Compiling WebGPU shaders & loading model weights...]*";
+      this.requestUpdate();
+
+      try {
+        await this.loadModelWeights();
+      } catch (loadErr) {
+        console.error("[LiteRT-LM] Auto-load weights error:", loadErr);
+      }
+
+      if (!this.engine || !this.activeConversation) {
+        this.messages[botIndex].text = `*[Model initialization failed: ${this.statusText || 'Engine not ready'}]*`;
+        this.isGenerating = false;
+        this.commitActiveChatHistory();
+        this.requestUpdate();
+        return;
+      }
+
+      // Clear the temporary compilation message once engine is ready
+      this.messages[botIndex].text = "";
+      this.requestUpdate();
+    }
+    
     let accumulatedText = "";
     let accumulatedThought = "";
     let isFirstToken = true;
@@ -876,7 +899,7 @@ export class ChatStateManager {
     try {
       // Check LiteRTConfig for RAG feature
       const isRagActive = typeof window !== 'undefined' && window.LiteRTConfig ? window.LiteRTConfig.get('rag') : true;
-      let finalPrompt = isRagActive && window.getRagPrompt ? window.getRagPrompt(prompt) : prompt;
+      let finalPrompt = isRagActive && window.getRagPrompt ? window.getRagPrompt(cleanPrompt) : cleanPrompt;
       
       // Inject language constraint instruction
       finalPrompt += `\n\n[Instruction: Respond ONLY in ${this.chatLanguage}.]`;
@@ -904,9 +927,22 @@ export class ChatStateManager {
             };
           }
           
-          // Check for standard generation content
-          if (value.content) {
-            const contentText = typeof value.content === 'string' ? value.content : (value.content[0]?.text || "");
+          // Check for standard generation content across multiple shape variations
+          let contentText = "";
+          if (typeof value === "string") {
+            contentText = value;
+          } else if (typeof value.content === "string") {
+            contentText = value.content;
+          } else if (Array.isArray(value.content)) {
+            for (const item of value.content) {
+              if (typeof item === "string") contentText += item;
+              else if (item && typeof item.text === "string") contentText += item.text;
+            }
+          } else if (typeof value.text === "string") {
+            contentText = value.text;
+          }
+          
+          if (contentText) {
             accumulatedText += contentText;
             this.messages[botIndex] = {
               ...this.messages[botIndex],
