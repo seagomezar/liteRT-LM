@@ -857,6 +857,19 @@ litert-chat-window {
   transform: translateX(22px);
 }
 
+@keyframes pulse-rec {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+
+.listening-pulse {
+  animation: pulse-rec 1.2s infinite ease-in-out !important;
+  background: #dc2626 !important;
+  border-color: #991b1b !important;
+  color: #ffffff !important;
+}
+
 /* ==========================================================================
    Full Screen HTML Preview Overlay
    ========================================================================== */

@@ -1131,7 +1131,7 @@ test('ChatStateManager Unit Tests', async (t) => {
     };
     const originalGetElementById = global.document.getElementById;
     global.document.getElementById = (id) => {
-      if (id === 'chat-input-textarea') return mockTextarea;
+      if (id === 'chat-input-textarea' || id === 'terminal-prompt-input') return mockTextarea;
       return null;
     };
 
@@ -1140,6 +1140,7 @@ test('ChatStateManager Unit Tests', async (t) => {
       state.initSpeechRecognition();
       assert.ok(state.recognition);
       assert.strictEqual(state.recognition.continuous, true);
+      assert.strictEqual(state.getChatInputElement(), mockTextarea);
 
       // Mock onresult with multi-part continuous results
       let finalEvent = {
@@ -1158,6 +1159,10 @@ test('ChatStateManager Unit Tests', async (t) => {
       state.recognition.onerror({ error: 'not-allowed' });
       assert.strictEqual(state.isListening, false);
       assert.strictEqual(state.statusText, 'Voice input failed: not-allowed');
+
+      // Verify onend after error resets flag without throwing
+      state.recognition.onend();
+      assert.strictEqual(state.isListening, false);
     } finally {
       // Restore
       global.document.getElementById = originalGetElementById;

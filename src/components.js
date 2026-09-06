@@ -719,7 +719,7 @@ export class LiteRTChatWindow extends LitElement {
 
   handlePromptSubmit(e) {
     e.preventDefault();
-    const textarea = this.querySelector('#terminal-prompt-input');
+    const textarea = this.querySelector('#chat-input-textarea') || this.querySelector('#terminal-prompt-input');
     if (!textarea) return;
     const text = textarea.value.trim();
     if (text) {
@@ -790,13 +790,13 @@ export class LiteRTChatWindow extends LitElement {
             
             <div class="typewriter-textarea-wrap">
               <textarea 
-                id="terminal-prompt-input"
-                class="typewriter-textarea"
+                id="chat-input-textarea"
+                class="typewriter-textarea terminal-prompt-input"
                 placeholder="Enter prompt into terminal ribbon... (Press Enter to transmit, Shift+Enter for new line)"
                 @keydown=${this.handleTextareaKeyDown}
               ></textarea>
               <div class="ribbon-tag-bar">
-                <span>STATUS: ${this.state.isGenerating ? 'PROCESSING...' : 'AWAITING DISPATCH'}</span>
+                <span>STATUS: ${this.state.isGenerating ? 'PROCESSING...' : (this.state.isListening ? '🔴 LISTENING & TRANSCRIBING... (SPEAK INTO MIC)' : (this.state.statusText || 'AWAITING DISPATCH'))}</span>
                 ${isRagEnabled && ragIndex && ragIndex.documents.size > 0 ? html`
                   <span style="color: var(--amber-dark); font-weight: bold;">RAG ARCHIVES ACTIVE (${ragIndex.documents.size} DOCS)</span>
                 ` : ""}
@@ -807,10 +807,12 @@ export class LiteRTChatWindow extends LitElement {
             ${isSttEnabled ? html`
               <button 
                 type="button" 
-                class="btn-typewriter-key"
-                style="${this.state.isListening ? 'background: #dc2626; border-color: #991b1b;' : ''}"
+                id="btn-voice-stt"
+                class="btn-typewriter-key ${this.state.isListening ? 'listening-pulse' : ''}"
+                style="${this.state.isListening ? 'background: #dc2626; border-color: #991b1b; color: #ffffff;' : ''}"
                 @click=${() => this.state.toggleListening()}
-                title="Voice Input"
+                title="${this.state.isListening ? 'Stop voice input' : 'Start voice input'}"
+                aria-label="${this.state.isListening ? 'Stop voice input' : 'Start voice input'}"
               >
                 ${this.state.isListening ? 'REC ●' : 'MIC 🎙'}
               </button>

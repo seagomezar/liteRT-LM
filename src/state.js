@@ -1031,6 +1031,14 @@ export class ChatStateManager {
     return lastIndex > 0 ? buffer.slice(lastIndex) : buffer;
   }
 
+  getChatInputElement() {
+    if (typeof document === 'undefined') return null;
+    return document.getElementById("chat-input-textarea") ||
+           document.getElementById("terminal-prompt-input") ||
+           document.querySelector(".typewriter-textarea") ||
+           document.querySelector("textarea");
+  }
+
   initSpeechRecognition() {
     if (typeof window === 'undefined') return;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1045,6 +1053,7 @@ export class ChatStateManager {
 
     rec.onstart = () => {
       this.isListening = true;
+      this.statusText = "Listening... Speak into your microphone.";
       this.requestUpdate();
     };
 
@@ -1052,15 +1061,18 @@ export class ChatStateManager {
       let interimTranscript = '';
       let finalTranscript = '';
       for (let i = 0; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
+        const item = event.results[i];
+        const isFinal = Boolean(item.isFinal || (item[0] && item[0].isFinal));
+        const transcriptText = item[0] ? item[0].transcript : '';
+        if (isFinal) {
+          finalTranscript += transcriptText;
         } else {
-          interimTranscript += event.results[i][0].transcript;
+          interimTranscript += transcriptText;
         }
       }
-      const textarea = document.getElementById("chat-input-textarea");
+      const textarea = this.getChatInputElement();
       if (textarea) {
-        textarea.value = finalTranscript + interimTranscript;
+        textarea.value = (this._transcriptPrefix || '') + finalTranscript + interimTranscript;
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
       }
     };
@@ -1068,7 +1080,9 @@ export class ChatStateManager {
     rec.onerror = (e) => {
       console.error("[LiteRT-LM] Speech recognition error:", e);
       this.isListening = false;
-      this.statusText = `Voice input failed: ${e.error || 'Unknown error'}`;
+      this._hadRecognitionError = true;
+      const errCode = e.error || 'unknown';
+      this.statusText = `Voice input failed: ${errCode}`;
       this.requestUpdate();
     };
 
@@ -1076,7 +1090,12 @@ export class ChatStateManager {
       this.isListening = false;
       this.requestUpdate();
       
-      const textarea = document.getElementById("chat-input-textarea");
+      if (this._hadRecognitionError) {
+        this._hadRecognitionError = false;
+        return;
+      }
+
+      const textarea = this.getChatInputElement();
       if (textarea && textarea.value.trim().length > 0) {
         const text = textarea.value.trim();
         textarea.value = "";
@@ -1091,17 +1110,46 @@ export class ChatStateManager {
     if (!this.recognition) {
       this.initSpeechRecognition();
     }
-    if (!this.recognition) return;
+    if (!this.recognition) {
+      this.statusText = "Speech recognition is not supported in this browser.";
+      this.requestUpdate();
+      return;
+    }
 
     if (this.isListening) {
-      this.recognition.stop();
+      try {
+        this.recognition.stop();
+      } catch (err) {
+        console.warn("[LiteRT-LM] Failed to stop recognition:", err);
+      }
+      this.isListening = false;
+      this.requestUpdate();
     } else {
+      this._hadRecognitionError = false;
+      const textarea = this.getChatInputElement();
+      if (textarea && textarea.value.trim().length > 0) {
+        this._transcriptPrefix = textarea.value.trim() + " ";
+      } else {
+        this._transcriptPrefix = "";
+      }
+
       this.recognition.lang = LANGUAGE_CODES[this.chatLanguage] || 'en-US';
       this.speechQueue.stop();
       try {
         this.recognition.start();
+        this.isListening = true;
+        this.statusText = "Listening... Speak into your microphone.";
+        this.requestUpdate();
       } catch (err) {
-        console.error("[LiteRT-LM] Failed to start recognition:", err);
+        if (err.name === 'InvalidStateError') {
+          this.isListening = true;
+          this.requestUpdate();
+        } else {
+          console.error("[LiteRT-LM] Failed to start recognition:", err);
+          this.statusText = `Voice input failed: ${err.message || err}`;
+          this.isListening = false;
+          this.requestUpdate();
+        }
       }
     }
   }
