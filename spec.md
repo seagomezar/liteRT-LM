@@ -1,336 +1,253 @@
-# Spec: LiteRT-LM WebGPU Chat API Alignment & Bug Fix
+# SPEC: LiteRT-LM WebGPU Chat - Testing, RAG Verification & GitHub Pages Deploy
 
-## Objective
-Align the dynamic library loading and model compilation flow in `src/state.js` with the official `@litert-lm/core` (version `0.13.1`) API. Resolve the runtime exception:
-`Failed to load model: litertlm.loadWasmModule is not a function`
-Ensure the application can successfully load the WASM runtime, compile downloaded models, and execute inference in the browser, while maintaining passing unit and E2E test suites.
+## 1. Objective
 
-## Tech Stack
-- **Framework**: modern Lit (loaded from jsDelivr ESM CDN: `https://cdn.jsdelivr.net/npm/lit@3.1.2/+esm`).
-- **LLM Runtime**: `@litert-lm/core` version `0.13.1` (loaded from CDN: `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.13.1/+esm`).
-- **WASM Assets**: Loaded via `litertlm.loadLiteRtLm` from `litertlm.LiteRtLm.DEFAULT_WASM_PATH`.
-- **Markdown & Highlight**: `marked` and `highlight.js` loaded via CDN.
-- **RAG Engine**: Local in-memory TF-IDF indexer (`src/rag.js`).
-- **State Management**: Reactive state manager (`src/state.js`).
-- **Test Framework**: Native Node.js Test Runner (`node:test`) and Cypress E2E.
+Harden and ship the existing **LiteRT-LM WebGPU Chat** application: a fully local, browser-only LLM chat runner that downloads and compiles a model with `@litert-lm/core`, runs inference on WebGPU, and layers on RAG (document grounding), a Phaser talking avatar, TTS/STT voice interaction, and multilingual support.
 
-## Commands
+This effort has three concrete goals:
+
+1. **Robust testing.**
+   Establish a reliable, deterministic unit + E2E test strategy for the chat app so that regressions are caught before merge.
+2. **Verify the core runtime paths.**
+   Ensure RAG indexing/retrieval, model download, and model compilation actually work end to end.
+   CI covers these against mocks; the real WebGPU/model paths are verified manually on the deployed site.
+3. **Deploy pipeline.**
+   Set up GitHub Actions to gate on tests and deploy the static site to GitHub Pages on merge to `master`.
+
+Out of scope: the **BrowserDJ AI / "DJ in the edge"** concept.
+That is a separate project and its PRD is removed from this repo as part of this work (see Section 8).
+
+### Target users
+
+- **End users:** People running a private, offline LLM chat in their browser (no server inference, no data leaving the device).
+  They value privacy, resilience to connectivity loss, and a polished voice/avatar experience.
+- **Developers/maintainers:** Contributors who need a green, trustworthy test suite and a hands-off deploy so shipping is safe and boring.
+
+## 2. Commands
+
 ```bash
-# Run unit tests
+# Install dependencies
+npm install
+
+# Run the local dev server (serves the static site at http://localhost:5173)
+npm run dev
+
+# Run unit tests (Node.js native test runner)
 npm test
 
-# Run Cypress E2E tests
+# Run Cypress E2E tests headlessly (requires the dev server running on :5173)
 npx cypress run
+
+# Open Cypress interactively
+npx cypress open
 ```
 
-## Project Structure
+Notes:
+
+- The dev server (`server.js`) is a zero-dependency static file server used for local development and as the Cypress `baseUrl`.
+  It is **not** part of the deployed artifact - GitHub Pages serves the static files directly.
+- Cypress `baseUrl` is `http://localhost:5173`, which matches `server.js`'s default `PORT`.
+
+## 3. Project Structure
+
 ```
 liteRT-LM/
+├── index.html                 -> App shell; loads Phaser, RAG global, ESM bootstrap; links assets/app.css (no inline styles)
+├── manifest.json              -> PWA manifest
+├── sw.js                      -> Service worker (does NOT cache the multi-GB model)
+├── server.js                  -> Zero-dependency static dev server (PORT=5173)
+├── rag.js                     -> RAG UI glue + PDF ingest; imports src/rag.js for the core engine
 ├── assets/
-│   ├── index-BEHUn5zE.css     -> Re-implemented clean CSS
-│   └── index-jzDBDxi2.js      -> Bootstrap launcher
+│   ├── index-jzDBDxi2.js      -> ESM bootstrap: imports state.js + components.js
+│   └── app.css                -> All app styles (consolidated from former inline block + hashed CSS)
 ├── src/
-│   ├── state.js               -> App state manager (updated to align API calls)
-│   ├── components.js          -> Lit UI components
-│   └── rag.js                 -> TF-IDF document indexer
+│   ├── state.js               -> ChatStateManager: engine load/compile, inference,
+│   │                             conversations, TTS/STT SpeechQueue, language mapping
+│   ├── components.js          -> Lit web components (chat window, sidebar, avatar, inputs)
+│   └── rag.js                 -> RAG core (tokenize, LocalRAGIndex); single source of truth
+│                                 for both the running app and the unit tests
 ├── test/
-│   └── state.test.js          -> TDD tests (updated to support new mocks)
-├── package.json               -> Dependencies & scripts
-├── server.js                  -> Zero-dependency server
-└── spec.md                    -> Living specification
+│   └── state.test.js          -> Unit tests (node:test) for RAG + ChatStateManager
+├── cypress/
+│   └── e2e/chat.cy.js         -> E2E UI tests
+├── cypress.config.js          -> Cypress config (baseUrl :5173, supportFile false)
+├── icons/                     -> PWA / app icons
+├── package.json               -> Deps (@litert-lm/core) + scripts
+└── SPEC.md                    -> This living specification
 ```
 
-## Code Style & Good Practices
-- Use clean, well-commented modern ES Modules.
-- Gracefully handle differences between mock testing environments (Node.js) and real WebGPU browser environments.
-- Fallback gracefully when experimental or non-existent APIs (like `getTokenizer()`) are not provided by the core engine.
+### RAG source-of-truth (reconciled)
 
-## Testing Strategy
-- Update the mock core object in `test/state.test.js` to provide both the old and new methods (`loadLiteRtLm`, `loadWasmModule`, `Engine.create`, `Engine.createEngine`) so that tests stay fully backwards compatible and pass successfully.
-- Verify through unit tests that all state manager transition paths, cancellation flows, and caching mechanisms remain intact.
+The RAG implementation is split into two files with clearly separated responsibilities:
 
-## Boundaries
-- **Always**: Keep tests green and maintain full browser compatibility.
-- **Ask first**: Adding new dependencies or changing styling choices.
-- **Never**: Skip or disable tests rather than correcting their mocks.
+- `src/rag.js` - the RAG core (`tokenize`, `LocalRAGIndex`, `window.ragIndex` / `window.getRagPrompt` bindings).
+  This is the **single source of truth** used by both the running app and the unit tests.
+- `rag.js` (repo root) - UI glue only: imports `./src/rag.js` and layers the sidebar panel and PDF ingestion on top.
 
-## Success Criteria
-- [x] Dynamic ESM import version updated to `0.13.1` in `src/state.js` to match `package.json`.
-- [x] Crash `litertlm.loadWasmModule is not a function` is resolved by using `litertlm.loadLiteRtLm` with `litertlm.LiteRtLm.DEFAULT_WASM_PATH`.
-- [x] Engine compilation aligned with `@litert-lm/core` by calling `litertlm.Engine.create()` instead of `litertlm.Engine.createEngine()`.
-- [x] Safe check added for `engine.getTokenizer()` with a fallback word-split token estimator if it's missing in `@litert-lm/core`.
-- [x] Local unit tests (`npm test`) pass successfully with 100% green status.
-- [x] Cypress E2E tests (`npx cypress run`) pass successfully with 100% green status.
+The unit tests import `src/rag.js` directly, so test coverage reflects the code that ships.
 
-## Open Questions
-- None at this time. The required API signatures have been verified directly in the installed `node_modules` code.
+## 4. Code Style & Conventions
 
-## Implementation Plan
-1. **API Mapping & Verification**: Verify ESM dynamic CDN imports match the local installed version (`0.13.1`).
-2. **Mock Updates**: Update `test/state.test.js` to mock the correct `loadLiteRtLm`, `LiteRtLm.DEFAULT_WASM_PATH`, and `Engine.create` APIs. Make them backwards-compatible with any remaining `loadWasmModule`/`createEngine` uses.
-3. **State Manager Refactoring**: Update `src/state.js`:
-   - Dynamic import version updated to `@0.13.1`.
-   - Call `loadLiteRtLm(...)` instead of `loadWasmModule(...)`.
-   - Call `Engine.create(...)` instead of `Engine.createEngine(...)`.
-   - Check if `engine.getTokenizer` is a function before calling, falling back to a space-splitting approximation.
-4. **Validation**: Run both Unit tests and Cypress E2E tests to verify 100% green status.
+- **Modern ES Modules**, clean and well-commented. Match the existing idiom in `src/`.
+- **Zero build step, CDN-first.**
+  Runtime dependencies (Lit, `@litert-lm/core`, `marked`, `highlight.js`, Phaser, pdf.js) load from CDN ESM/script tags.
+  Do not introduce a bundler without explicit approval (see Boundaries).
+- **Relative asset paths only** (`./assets/...`).
+  This is required for the app to work under the GitHub Pages project subpath (`/liteRT-LM/`).
+  Never hardcode absolute root paths (`/assets/...`).
+- **Graceful degradation.**
+  Feature-detect experimental browser APIs (WebGPU, `speechSynthesis`, `SpeechRecognition`, File System Access) and degrade with console warnings + disabled UI rather than crashing.
+- **Environment parity.**
+  Code must run both in the Node.js mock test environment and the real WebGPU browser environment; guard browser-only globals.
+- **Markdown docs:** one sentence per physical line; plain `-` dashes, never em dashes.
 
-## Tasks List
-- [x] **Task 1**: Update mock definitions in `test/state.test.js`
-  - *Acceptance*: Mocks provide both `loadLiteRtLm` / `Engine.create` and old compatibility helpers.
-  - *Verify*: `npm test` passes.
-  - *Files*: `test/state.test.js`
-- [x] **Task 2**: Refactor `src/state.js` API calls and fallback logic
-  - *Acceptance*: Code uses aligned APIs and doesn't crash on WASM loading or tokenizer creation.
-  - *Verify*: `npm test` passes.
-  - *Files*: `src/state.js`
-- [x] **Task 3**: Run local server and E2E Cypress validation
-  - *Acceptance*: Cypress suite runs and passes against the refactored code.
-  - *Verify*: `npx cypress run` passes.
-  - *Files*: None
+## 5. Testing Strategy
 
-## Iteration: Greedy Sampler Top-K Validation Fix
+### 5.1 Unit tests (`npm test`, `node:test`) - the fast gate
 
-### Objective
-Fix the runtime generation crash `Generation failed: Top-K value 64 must be <= 1` that occurs when using the Greedy sampler.
+- Deterministic and fully mocked; no network, no WebGPU, no real model.
+- Mock `@litert-lm/core` to cover both current and legacy API shapes (`loadLiteRtLm`, `LiteRtLm.DEFAULT_WASM_PATH`, `Engine.create`) so tests stay backwards compatible.
+- Cover: RAG tokenization/indexing/retrieval, `ChatStateManager` state transitions, cancellation (AbortController), conversation persistence + rename, sampler param construction (greedy/top-k/top-p), speech queue splitting/queuing, selective audio stop, language mapping (BCP 47) and prompt-language injection, and continuous STT transcript accumulation + error reporting.
+- **Baseline:** currently 46 tests passing.
+  This must stay green; new features add tests.
+- RAG is reconciled (see Section 3): unit tests import `src/rag.js`, the same module the app ships.
 
-### Success Criteria
-- [x] Construct `samplerParams` conditionally based on the active `samplerType`.
-- [x] If `samplerType === "greedy"`, pass `k = 1`, `p = 1.0`, and `temperature = 0.0` to comply with the engine's validation check.
-- [x] Unit tests pass successfully.
-- [x] E2E Cypress tests pass successfully.
+### 5.2 E2E tests (Cypress) - the UI gate
 
-### Tasks List
-- [x] **Task 4**: Add dynamic `getSamplerParams` helper and refactor `src/state.js` conversation creation.
-  - *Acceptance*: State manager applies compliant parameters for greedy/top-p/top-k.
-  - *Verify*: `npm test` passes.
-  - *Files*: `src/state.js`
-- [x] **Task 5**: Verify via Cypress E2E.
-  - *Acceptance*: Cypress suite runs and passes.
-  - *Verify*: `npx cypress run` passes.
-  - *Files*: None
+- Run against the static site served by `server.js` on `:5173`.
+- Mock/stub the LiteRT-LM engine and speech APIs at the browser layer so the UI flows are deterministic and fast (no real model download).
+- Cover the flows already present: landing page structure, inference settings + CoT toggle, custom model dropdown, starter + custom prompt submission and message bubbles, retry/edit, learn-more drawer, document hub indexing + file/PDF upload, new conversation + list toggle, sidebar rename + persistence, language selection + persistence, and selective speech stop.
+- Replace fixed `cy.wait(<ms>)` calls with assertions/aliases where they cause flakiness (flakiness is a defect - fix it when seen).
 
-## Iteration: Chat Retitling & Persistence
+### 5.3 Real-model verification - manual, on the deployed site
 
-### Objective
-Add the capability for users to rename (retitle) conversations in the sidebar. The updated titles must persist in the browser's `localStorage` across page reloads.
+CI is **fully mocked** (5.1 and 5.2).
+The real runtime paths that cannot run in CI - multi-GB model download, compilation via `@litert-lm/core`, and WebGPU inference - are verified **manually against the deployed GitHub Pages site**, not in an automated job.
 
-### Success Criteria
-- [ ] Render a rename button (pencil/edit icon or similar indicator) next to each conversation item in the sidebar.
-- [ ] Clicking the rename button toggles an inline text input field pre-filled with the current title.
-- [ ] Saving the new title (via Enter key, blur, or checkmark button) calls `ChatStateManager.renameConversation(id, newTitle)`.
-- [ ] `ChatStateManager.renameConversation(id, newTitle)` updates the matching conversation in `conversationsList` and calls `saveSavedConversationsIndex()`.
-- [ ] Escape key or clicking Cancel (cross button) cancels the edit without saving.
-- [ ] Add unit tests in `test/state.test.js` to verify that `renameConversation(id, newTitle)` updates the list and persists it.
-- [ ] Add E2E tests in `cypress/e2e/chat.cy.js` to verify the UI flow (clicking rename, typing a new name, saving, and seeing it updated).
+There is deliberately **no** WebGPU/GPU-runner E2E job.
+This avoids self-hosted GPU-runner infrastructure and keeps CI fast, deterministic, and free.
+The tradeoff is that real model/inference regressions are caught by the manual pass below rather than by CI.
 
-### Tasks List
-- [x] **Task 6**: Update `src/state.js` to implement `renameConversation(id, newTitle)` and unit tests in `test/state.test.js`.
-  - *Acceptance*: State manager supports renaming; unit tests cover success and boundaries.
-  - *Verify*: `npm test` passes.
-  - *Files*: `src/state.js`, `test/state.test.js`
-- [x] **Task 7**: Update `src/components.js` to support inline renaming in the sidebar.
-  - *Acceptance*: Sidebar items can be edited via inline text inputs.
-  - *Verify*: Manual browser check looks beautiful and functions cleanly.
-  - *Files*: `src/components.js`
-- [x] **Task 8**: Add Cypress E2E tests for the renaming flow.
-  - *Acceptance*: Cypress test clicks rename, inputs new name, saves, and asserts change.
-  - *Verify*: `npx cypress run` passes.
-  - *Files*: `cypress/e2e/chat.cy.js`
+**Manual checklist (run against `https://seagomezar.github.io/liteRT-LM/` after each deploy):**
 
-## Iteration: Phaser JS Talking Avatar & Voice Interaction
+- Cold model download completes and streams to storage.
+- Warm reload recovers the model instantly from cache (no re-download).
+- Model compiles and a real prompt produces streamed tokens (TTFT sanity check).
+- RAG on vs. off produces a visibly different, document-grounded response.
+- TTS speaks streamed sentences; avatar mouth-flap syncs to speech.
+- STT transcribes voice input in both English and Spanish without premature cutoff.
+- Language switch changes both the response language and the TTS voice.
 
-### Objective
-Create an in-browser voice-interactive experience:
-1. Render a procedural 2D cartoon avatar in Phaser JS positioned above the chat timeline.
-2. Implement local Text-to-Speech (TTS) using the Web Speech Synthesis API, queued to speak sentence-by-sentence dynamically as the LLM stream is generated.
-3. Synchronize the Phaser avatar's mouth-flap and facial expression animations with the talking state.
-4. Implement local Speech-to-Text (STT) voice input using the Web Speech Recognition API, activated via a toggleable Microphone button with visual state changes.
+If any item is skipped or cannot be verified (e.g., no WebGPU on the test device), record that explicitly rather than reporting a false green.
 
-### Assumptions I'm Making:
-1. **Phaser JS**: Loaded from CDN (`https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js`) via a `<script>` tag in `index.html`.
-2. **Text-to-Speech (TTS)**: Built-in browser `window.speechSynthesis` API is used. No external API keys are required.
-3. **Speech-to-Text (STT)**: Built-in browser `window.SpeechRecognition` (or `window.webkitSpeechRecognition`) is used.
-4. **Sentence Streaming**: We split the LLM response text into sentences on punctuation (e.g. `.`, `!`, `?`, `\n`) and feed them into a TTS speak queue to minimize initial voice delay.
-5. **Fallback**: If speech APIs are blocked or unsupported by the browser, the application degrades gracefully with console warnings and disables the voice UI elements.
+## 6. Deployment (GitHub Pages via GitHub Actions)
 
-### Success Criteria
-- [x] Phaser script loaded and initialized dynamically or statically in `index.html`.
-- [x] A dedicated avatar card/panel is rendered above the chat timeline, housing a Phaser Canvas.
-- [x] Phaser avatar displays an idle animation (e.g., breathing, occasional eye blinking) when not speaking.
-- [x] Phaser avatar displays a talking animation (e.g., mouth opening/closing procedurally) when TTS is speaking.
-- [x] LLM stream is parsed on the fly into complete sentences, and sentences are queued and read sequentially.
-- [x] Microphone button added to the input panel. Clicking it toggles speech recognition.
-- [x] Speech recognition captures user voice, prints transcribed text in the input area, and automatically submits the prompt when the user stops speaking.
-- [x] TTS speech can be stopped/interrupted if the user clicks "Stop" during generation.
-- [x] Unit tests updated/added in `test/state.test.js` to mock/verify speech queue features.
-- [x] Cypress E2E tests verify the existence of the avatar card and the mic button.
+Repository: `github.com/seagomezar/liteRT-LM` → Pages URL `https://seagomezar.github.io/liteRT-LM/` (project subpath, hence relative paths are mandatory).
 
-### Implementation Plan
-1. **Script Integration**: Add Phaser JS CDN script link to `index.html`.
-2. **State Manager (TTS & STT)**:
-   - Add a `SpeechQueue` class or state helpers in `src/state.js` to split, queue, and synthesize text.
-   - Bind talking state changes to state variables (e.g. `this.isSpeaking = true/false`).
-   - Implement web Speech Recognition start/stop flow and auto-submit hooks.
-3. **Phaser Avatar Component**:
-   - Implement a new Web Component `litert-avatar` in `src/components.js` that boots a Phaser Game instance.
-   - Use Phaser graphics primitives (circle, arcs, paths) to draw a cute, stylized cartoon face (eyes, head, mouth) procedurally.
-   - Implement Phaser update/animations loop reacting to state changes (`isSpeaking`).
-4. **UI Integration**:
-   - Embed `litert-avatar` above the chat messages container in `litert-chat-window`.
-   - Add mic button with mic-icon (using SVG) to the input bar.
-5. **Validation**: Write tests and check that the application works seamlessly.
+### Pipeline shape: test-gate, then deploy
 
-### Tasks List
-- [x] **Task 9**: Integrate Phaser CDN and create the Speech manager inside `src/state.js` with tests in `test/state.test.js`.
-  - *Acceptance*: Sentence splitter and speak queue work. Unit tests cover queuing and splitting logic.
-  - *Verify*: `npm test` passes.
-  - *Files*: `index.html`, `src/state.js`, `test/state.test.js`
-- [x] **Task 10**: Build the `litert-avatar` component using Phaser JS.
-  - *Acceptance*: Character is drawn procedurally and animates its mouth when `isSpeaking` is true.
-  - *Verify*: Open in browser and verify the canvas character draws correctly and blinks/moves.
-  - *Files*: `src/components.js`
-- [x] **Task 11**: Connect Speech Recognition input & Microphone button UI.
-  - *Acceptance*: Clicking the microphone starts recognition, updating input text, and auto-submits.
-  - *Verify*: Microphones are active, text parses.
-  - *Files*: `src/components.js`, `src/state.js`
-- [x] **Task 12**: Run E2E Cypress tests to check layout alignment.
-  - *Acceptance*: Cypress checks avatar container and mic button presence.
-  - *Verify*: `npx cypress run` passes.
-  - *Files*: `cypress/e2e/chat.cy.js`
-## Iteration: Multilingual Support (Language Selection & Alignment)
+**On pull requests to `master`:**
 
-### Objective
-Allow the user to select their desired conversation language in the sidebar settings. This language configuration will:
-1. Force the local LLM agent to only chat (respond) in the selected language.
-2. Align the local Text-to-Speech (TTS) voice and language configuration to speak with matching accent and pronunciation.
-3. Align the Speech-to-Text (STT) recognition engine to correctly transcribe the user's spoken voice in the selected language.
+1. Checkout, `npm ci`.
+2. `npm test` (unit) - must pass.
+3. Start `server.js`, run `npx cypress run` (E2E) - must pass.
+4. These are **required status checks**; a red suite blocks merge.
 
-- [x] Add a "Language" dropdown select element in the sidebar settings panel.
-- [x] Persist `chatLanguage` (defaulting to `"English"`) inside the settings structure in `localStorage`.
-- [x] Map `chatLanguage` in `state.js` to BCP 47 codes:
-  * English -> `en-US`
-  * Spanish -> `es-ES`
-  * French -> `fr-FR`
-  * German -> `de-DE`
-  * Chinese -> `zh-CN`
-  * Japanese -> `ja-JP`
-  * Portuguese -> `pt-BR`
-  * Italian -> `it-IT`
-- [x] Update `SpeechRecognition` to configure `recognition.lang` to the mapped BCP 47 code.
-- [x] Configure `SpeechSynthesisUtterance.lang` and select a matching voice based on the BCP 47 code.
-- [x] Append prompt postfix `\n\n[Instruction: Respond ONLY in ${this.chatLanguage}.]` in `ChatStateManager.sendMessage` (and the `redoResponse` flow).
-- [x] Update unit tests in `test/state.test.js` to verify language settings loading, persistence, and dynamic voice/recognition mapping.
-- [x] Verify that Cypress E2E tests run successfully (mocking/checking the new language element).
+**On push/merge to `master`:**
 
-### Implementation Plan
-1. **State Manager Updates**:
-   - Add `chatLanguage` to the settings and default state.
-   - Map languages to BCP 47 tags.
-   - Configure `recognition.lang` and SpeechQueue to use the mapped language code.
-   - Append prompt instruction in `sendMessage`.
-2. **UI Settings Panel**:
-   - Add a `<select>` dropdown in `src/components.js` for language selection under the inference settings.
-3. **Validation**:
-   - Update unit tests in `test/state.test.js` to assert `chatLanguage` default, setting, and correct execution paths.
-   - Ensure `npm test` and local server Cypress flows pass cleanly.
+1. Re-run the test gate.
+2. On success, publish the static site (repo root static files: `index.html`, `assets/`, `rag.js`, `sw.js`, `manifest.json`, `icons/`, `src/`) to GitHub Pages using the official Pages actions (`upload-pages-artifact` + `deploy-pages`) with the correct `permissions` (`pages: write`, `id-token: write`) and a `github-pages` environment.
 
-### Tasks List
-- [x] **Task 13**: Refactor `src/state.js` to support `chatLanguage`, BCP 47 language mapping, TTS/STT language injection, and prompt constraint appending.
-  - *Acceptance*: State manager initializes, persists, and utilizes the selected language correctly.
-  - *Verify*: `npm test` passes.
-  - *Files*: `src/state.js`
-- [x] **Task 14**: Update `src/components.js` settings drawer UI.
-  - *Acceptance*: A premium dropdown for Language is rendered in the sidebar, modifying `state.chatLanguage` on change.
-  - *Verify*: Manual browser check of sidebar select box.
-  - *Files*: `src/components.js`
-- [x] **Task 15**: Add unit tests in `test/state.test.js` to verify language changes, STT alignment, and prompt postfix injection.
-  - *Acceptance*: Test suite verifies multilingual logic with 100% pass status.
-  - *Verify*: `npm test` passes.
-  - *Files*: `test/state.test.js`
-- [x] **Task 16**: Update and run Cypress E2E tests.
-  - *Acceptance*: Cypress verifies presence of the language setting select box and that settings updates affect the state correctly.
-  - *Verify*: `npx cypress run` passes.
-  - *Files*: `cypress/e2e/chat.cy.js`
+After deploy, run the manual real-model verification against the live Pages site (Section 5.3).
 
-## Iteration: Selective Audio Stop (Stop Speech But Not Generation)
+Deployment constraints:
 
-### Objective
-Allow the user to stop the audio speech playback (TTS) of the agent's response immediately, without interrupting the textual stream/generation of the answer in the chat timeline.
+- GitHub Pages is static-only: no `server.js` at runtime, no server-side inference.
+  All compute is client-side (this is the product's whole point).
+- The service worker must continue to **not** cache the model blob (already handled in `sw.js`).
+- Verify the deployed site loads under the `/liteRT-LM/` subpath before declaring success.
 
-### Success Criteria
-- [x] Implement `stopSpeechOnly()` in `ChatStateManager` to clear `SpeechQueue` and set `isSpeechMutedForCurrentResponse = true`.
-- [x] Reset `isSpeechMutedForCurrentResponse = false` in `ChatStateManager.sendMessage(prompt)`.
-- [x] Prevent sentence splitting and queuing inside `sendMessage` loop if `isSpeechMutedForCurrentResponse` is true.
-- [x] Add the "Stop Audio" button dynamically inside `LiteRTAvatar` component when `state.isSpeaking` is true.
-- [x] Add unit tests verifying `stopSpeechOnly()` behavior, state suppression, and reset on the next prompt.
-- [x] Verify that Cypress E2E tests run successfully (mocking/checking the new selective stop audio button).
+## 7. Boundaries
 
-### Implementation Plan
-1. **State Manager Updates**:
-   - Add `isSpeechMutedForCurrentResponse = false` to default state.
-   - Implement `stopSpeechOnly()` method to clear/stop the SpeechQueue and set `isSpeechMutedForCurrentResponse = true`.
-   - In `sendMessage()`, reset `isSpeechMutedForCurrentResponse` to `false` at start.
-   - Conditionally add sentences to `SpeechQueue` inside the streaming loop only if `!isSpeechMutedForCurrentResponse`.
-2. **UI Updates**:
-   - In `src/components.js`, inside `LiteRTAvatar.render()`, if `state.isSpeaking` is true, render a "Stop Audio" button. Clicking it invokes `state.stopSpeechOnly()`.
-3. **Validation**:
-   - Add tests to `test/state.test.js` validating the state suppression, SpeechQueue stopping, and auto-reset.
-   - Update Cypress E2E test suite to verify presence and clickability of the "Stop Audio" button.
+### Always
 
-### Tasks List
-- [x] **Task 17**: Refactor `src/state.js` to implement `stopSpeechOnly()`, suppress TTS queuing when active, and reset on `sendMessage()`.
-  - *Acceptance*: State manager supports stopping audio separately from generation.
-  - *Verify*: `npm test` passes.
-  - *Files*: `src/state.js`
-- [x] **Task 18**: Update `src/components.js` to render the "Stop Audio" button on the `<litert-avatar>` component card.
-  - *Acceptance*: "Stop Audio" button is visible when avatar is speaking, and clicking it halts speech.
-  - *Verify*: Manual browser check of avatar card during audio synthesis.
-  - *Files*: `src/components.js`
-- [x] **Task 19**: Add unit tests in `test/state.test.js` to cover selective audio stopping and reset flows.
-  - *Acceptance*: Unit tests verify the new state flag and SpeechQueue interaction.
-  - *Verify*: `npm test` passes.
-  - *Files*: `test/state.test.js`
-- [x] **Task 20**: Run Cypress E2E tests.
-  - *Acceptance*: Verification suite runs successfully.
-  - *Verify*: `npx cypress run` passes.
-  - *Files*: `cypress/e2e/chat.cy.js`
+- Keep the unit suite (`npm test`) and E2E suite (`npx cypress run`) green before merge.
+- Use relative asset paths so the app works under the Pages subpath.
+- Feature-detect and degrade gracefully for WebGPU and speech APIs.
+- Keep `src/rag.js` as the single RAG source of truth; do not re-introduce a parallel implementation in `rag.js`.
+- Fix flakiness, lint issues, and test failures you encounter, even if incidental.
+- Reproduce bugs in an E2E setting (as an end user would hit them) before fixing.
 
-## Iteration: Multilingual Speech-to-Text Robustness (Continuous Listening)
+### Ask first
 
-### Objective
-Ensure that both Spanish and English voice transcription (Speech-to-Text) functions smoothly, reliably, and without premature cutoffs.
+- Adding any new runtime dependency or introducing a bundler/build step (breaks the zero-build, CDN-first architecture).
+- Changing the model, the `@litert-lm/core` major version, or the CDN sources.
+- Significant restyling or UI layout changes.
+- Removing or archiving the existing chat app code.
 
-### Success Criteria
-- [x] Set `rec.continuous = true` in `initSpeechRecognition()`.
-- [x] Update `rec.onresult` to loop from `0` to `event.results.length` to properly accumulate transcripts across continuous sessions.
-- [x] Add explicit error message handling in `rec.onerror` to update `state.statusText`.
-- [x] Update unit tests in `test/state.test.js` to mock continuous speech recognition events and assert proper transcript accumulation and error feedback.
-- [x] Verify that Cypress E2E tests run successfully.
+### Never
 
-### Implementation Plan
-1. **State Manager Updates**:
-   - In `initSpeechRecognition()`, configure `rec.continuous = true`.
-   - Update the loop inside `rec.onresult` to read from index `0` to `event.results.length` and combine `finalTranscript + interimTranscript`.
-   - In `rec.onerror`, set `this.statusText = 'Voice input failed: ' + e.error`.
-2. **Unit Tests**:
-   - Update tests in `test/state.test.js` to simulate multiple event results in SpeechRecognition mock to verify the loop scans from index 0.
-   - Assert error messaging works correctly.
-3. **Validation**:
-   - Verify all unit tests and Cypress E2E tests pass.
+- Skip, disable, or delete tests to make the suite pass - fix the code or the mocks instead.
+- Report a false green: if a step was skipped, mocked, or truncated, say so.
+- Add server-side inference or any dependency on a remote compute backend (violates the offline/private product promise).
+- Cache the multi-GB model inside the service worker cache.
+- Reintroduce BrowserDJ AI / "DJ in the edge" material into this repo.
 
-### Tasks List
-- [x] **Task 21**: Refactor `src/state.js` to enable continuous recognition, build accumulated transcripts, and capture descriptive speech error feedback.
-  - *Acceptance*: State manager supports continuous voice recording and detailed error reports.
-  - *Verify*: `npm test` passes.
-  - *Files*: `src/state.js`
-- [x] **Task 22**: Update unit tests in `test/state.test.js` to mock continuous results lists and assert error status messages.
-  - *Acceptance*: Test suite verifies continuous accumulation and error logging with 100% pass status.
-  - *Verify*: `npm test` passes.
-  - *Files*: `test/state.test.js`
-- [x] **Task 23**: Run Cypress E2E tests.
-  - *Acceptance*: Verification suite runs successfully.
-  - *Verify*: `npx cypress run` passes.
-  - *Files*: `cypress/e2e/chat.cy.js`
+## 8. Removal: BrowserDJ AI ("DJ in the edge")
 
+BrowserDJ AI is a separate project and must not live in this repo.
 
+- **Delete** `BrowserDJ AI - PRD y Blueprint de Ingenieria.md`.
+- Investigation confirms there is currently **no DJ-specific code or assets** in the repo (no Elementary Audio, DSP graph, AudioWorklet, or mixdown references outside the PRD).
+  Removal is limited to the PRD file.
+- If any DJ-only code surfaces later, remove it too, keeping only what the chat app uses.
+
+## 9. Success Criteria
+
+- [x] `BrowserDJ AI - PRD y Blueprint de Ingenieria.md` deleted; no DJ references remain (outside this spec's mention).
+- [x] RAG reconciled to a single source of truth; unit tests import the same module the app ships.
+- [x] `npm test` green with unit coverage for RAG, model load/compile mocks, inference, and all existing features.
+- [x] `npx cypress run` green, with flaky `cy.wait` timers replaced by assertions where they caused instability.
+- [x] GitHub Actions PR workflow runs unit + E2E as required checks (fully mocked; no GPU runner).
+- [x] GitHub Actions deploy workflow publishes to GitHub Pages on merge to `master`; deployed site verified loading under `/liteRT-LM/`.
+- [ ] Manual real-model checklist (Section 5.3) documented and run against the live Pages site after deploy.
+
+## 10. Open Questions
+
+- **Manual-check model:** Which model + weights the manual checklist (Section 5.3) exercises on the deployed site.
+  Defaults to whatever the app ships as its default model unless specified otherwise.
+
+---
+
+## Appendix: Historical Iteration Log
+
+The following records the completed feature iterations that built the current chat app.
+Preserved for context; not part of the active plan above.
+
+### Iteration: API Alignment & Bug Fix (completed)
+
+Aligned `src/state.js` with `@litert-lm/core@0.13.1`: use `loadLiteRtLm` + `LiteRtLm.DEFAULT_WASM_PATH` (not `loadWasmModule`), `Engine.create` (not `Engine.createEngine`), and a safe `getTokenizer()` fallback word-split estimator.
+
+### Iteration: Greedy Sampler Top-K Fix (completed)
+
+Conditional `samplerParams`: greedy uses `k=1`, `p=1.0`, `temperature=0.0` to satisfy engine validation.
+
+### Iteration: Chat Retitling & Persistence (completed)
+
+`renameConversation(id, newTitle)` with inline sidebar edit (Enter/blur/checkmark to save, Escape/cancel to abort), persisted to `localStorage`.
+
+### Iteration: Phaser Talking Avatar & Voice (completed)
+
+Procedural Phaser avatar above the timeline; TTS via `speechSynthesis` speaking streamed sentences; STT via `SpeechRecognition` with a mic toggle; mouth-flap synced to `isSpeaking`; graceful degradation when speech APIs are unavailable.
+
+### Iteration: Multilingual Support (completed)
+
+Language dropdown persisted as `chatLanguage`; BCP 47 mapping (en-US, es-ES, fr-FR, de-DE, zh-CN, ja-JP, pt-BR, it-IT) applied to STT `recognition.lang`, TTS utterance/voice, and a prompt postfix constraining the response language.
+
+### Iteration: Selective Audio Stop (completed)
+
+`stopSpeechOnly()` clears the SpeechQueue and sets `isSpeechMutedForCurrentResponse` so audio stops without interrupting text generation; reset on the next `sendMessage`; "Stop Audio" button on the avatar card while speaking.
+
+### Iteration: Continuous STT Robustness (completed)
+
+`recognition.continuous = true`, `onresult` loops from index 0 to accumulate transcripts across a continuous session, and `onerror` surfaces a descriptive `statusText`.

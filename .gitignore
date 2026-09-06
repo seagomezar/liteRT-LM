@@ -1,0 +1,18 @@
+# Dependencies (installed via npm ci; not committed).
+# Note: node_modules/@litert-lm/core was committed historically and remains
+# tracked - .gitignore does not untrack existing files.
+node_modules/
+
+# Cypress artifacts
+cypress/videos/
+cypress/screenshots/
+cypress/downloads/
+
+# Deploy staging dir produced by the Pages workflow
+_site/
+
+# OS / editor noise
+.DS_Store
+
+# Local agent tooling state
+.claude-dad/
