@@ -119,6 +119,7 @@ export class ChatStateManager {
     this.statusText = "Idle. Select settings to start.";
     this.statusCacheText = "";
     this.metricLoadTime = "-";
+    this.liveTokensPerSec = 0; // Reactive rate for vintage VU-meter needle
 
     // Cache & Downloading
     this.cachedModels = new Map();         // filename -> size
@@ -520,7 +521,8 @@ export class ChatStateManager {
   }
 
   getSamplerTypeEnum(type, litertlm) {
-    return type === "top_k" ? litertlm.SamplerType.TOP_K : (type === "top_p" ? litertlm.SamplerType.TOP_P : litertlm.SamplerType.GREEDY);
+    const st = litertlm?.SamplerType || { TOP_K: 1, TOP_P: 2, GREEDY: 0 };
+    return type === "top_k" ? st.TOP_K : (type === "top_p" ? st.TOP_P : st.GREEDY);
   }
 
   getSamplerParams(litertlm) {
@@ -610,12 +612,29 @@ export class ChatStateManager {
         
         const totalSize = parseInt(response.headers.get("content-length") || "0", 10);
         let downloaded = 0;
+        let lastTime = performance.now();
+        let lastDownloaded = 0;
+        let speedStr = "0.0 MB/s";
         
         const stream = this.makeProgressStream(response.body, (chunkLength) => {
           downloaded += chunkLength;
-          const percentage = totalSize > 0 ? (downloaded / totalSize) * 100 : 0;
-          this.downloadProgresses.set(filename, Math.round(percentage));
-          this.downloadSpeeds.set(filename, `${(downloaded / 1e6).toFixed(1)} MB / ${(totalSize / 1e6).toFixed(1)} MB`);
+          const now = performance.now();
+          if (now - lastTime > 400) {
+            const bytesPerSec = ((downloaded - lastDownloaded) / (now - lastTime)) * 1000;
+            speedStr = `${(bytesPerSec / 1e6).toFixed(1)} MB/s`;
+            lastTime = now;
+            lastDownloaded = downloaded;
+          }
+          
+          if (totalSize > 0) {
+            const percentage = Math.min(100, Math.round((downloaded / totalSize) * 100));
+            this.downloadProgresses.set(filename, percentage);
+            this.downloadSpeeds.set(filename, `${(downloaded / 1e6).toFixed(1)} / ${(totalSize / 1e6).toFixed(1)} MB (${speedStr})`);
+          } else {
+            // Indeterminate size - show downloaded MB and animated state
+            this.downloadProgresses.set(filename, -1);
+            this.downloadSpeeds.set(filename, `${(downloaded / 1e6).toFixed(1)} MB downloaded (${speedStr})`);
+          }
           this.requestUpdate();
         });
         
@@ -713,6 +732,95 @@ export class ChatStateManager {
     }
   }
 
+  async loadModelFromFile(file) {
+    if (this.isModelLoading || typeof window === 'undefined' || !file) return;
+
+    const filename = file.name;
+    this.isModelLoading = true;
+    this.isDownloadAborted = false;
+    this.statusCacheText = "";
+    this.statusText = `Preparing local model file (${filename})...`;
+    this.requestUpdate();
+
+    const startTime = performance.now();
+
+    try {
+      const litertlm = await this.importCore();
+
+      if (!this.isWasmLoaded) {
+        this.statusText = "Loading LiteRT WASM runtime...";
+        this.requestUpdate();
+        if (typeof litertlm.loadLiteRtLm === 'function') {
+          const wasmPath = litertlm.LiteRtLm ? litertlm.LiteRtLm.DEFAULT_WASM_PATH : (litertlm.DEFAULT_WASM_PATH || "");
+          await litertlm.loadLiteRtLm(wasmPath);
+        } else if (typeof litertlm.loadWasmModule === 'function') {
+          await litertlm.loadWasmModule(litertlm.DEFAULT_WASM_PATH);
+        }
+        this.isWasmLoaded = true;
+      }
+
+      this.cleanup();
+      this.statusText = `Reading local file (${filename})...`;
+      this.requestUpdate();
+
+      const totalSize = file.size || 0;
+      let loaded = 0;
+      const fileStream = typeof file.stream === 'function' ? file.stream() : new Response(file).body;
+
+      const progressStream = this.makeProgressStream(fileStream, (chunkLength) => {
+        loaded += chunkLength;
+        const percentage = totalSize > 0 ? (loaded / totalSize) * 100 : 0;
+        this.downloadProgresses.set(filename, Math.round(percentage));
+        this.downloadSpeeds.set(filename, `${(loaded / 1e6).toFixed(1)} MB / ${(totalSize / 1e6).toFixed(1)} MB`);
+        this.requestUpdate();
+      });
+
+      this.statusText = `Compiling Model (${filename})...`;
+      this.requestUpdate();
+
+      if (typeof litertlm.Engine.create === 'function') {
+        this.engine = await litertlm.Engine.create({ model: progressStream });
+      } else {
+        this.engine = await litertlm.Engine.createEngine({ model: progressStream, wasmPath: litertlm.DEFAULT_WASM_PATH });
+      }
+
+      const loadEndTime = performance.now();
+      this.metricLoadTime = `${((loadEndTime - startTime) / 1000).toFixed(2)}s`;
+
+      this.statusText = "Creating conversation session...";
+      this.requestUpdate();
+
+      this.activeConversation = await this.engine.createConversation({
+        sessionConfig: {
+          maxOutputTokens: this.maxOutputTokens,
+          samplerParams: this.getSamplerParams(litertlm)
+        },
+        preface: {
+          extra_context: {
+            enable_thinking: this.enableThinking
+          }
+        }
+      });
+
+      if (typeof this.engine.getTokenizer === 'function') {
+        this.sharedTokenizer = await this.engine.getTokenizer();
+      }
+
+      this.statusText = `Model loaded from local file (${filename}). Ready.`;
+      this.isModelLoading = false;
+      this.downloadProgresses.delete(filename);
+      this.downloadSpeeds.delete(filename);
+      this.requestUpdate();
+    } catch (err) {
+      console.error("[LiteRT-LM] Local load failed:", err);
+      this.isModelLoading = false;
+      this.statusText = `Failed to load local file: ${err.message || err}`;
+      this.downloadProgresses.delete(filename);
+      this.downloadSpeeds.delete(filename);
+      this.requestUpdate();
+    }
+  }
+
   async sendMessage(prompt) {
     if (this.isGenerating || !prompt.trim() || typeof window === 'undefined') return;
     
@@ -766,8 +874,9 @@ export class ChatStateManager {
     let sentenceBuffer = "";
     
     try {
-      // Prompt hook invocation (returns augmented prompt if RAG active)
-      let finalPrompt = window.getRagPrompt ? window.getRagPrompt(prompt) : prompt;
+      // Check LiteRTConfig for RAG feature
+      const isRagActive = typeof window !== 'undefined' && window.LiteRTConfig ? window.LiteRTConfig.get('rag') : true;
+      let finalPrompt = isRagActive && window.getRagPrompt ? window.getRagPrompt(prompt) : prompt;
       
       // Inject language constraint instruction
       finalPrompt += `\n\n[Instruction: Respond ONLY in ${this.chatLanguage}.]`;
@@ -813,9 +922,14 @@ export class ChatStateManager {
           isFirstToken = false;
         }
         tokensCounter++;
+        const currentElapsedSec = (performance.now() - (firstTokenTime || startInferenceTime)) / 1000;
+        if (currentElapsedSec > 0.15) {
+          this.liveTokensPerSec = Math.round(tokensCounter / currentElapsedSec);
+        }
         this.requestUpdate();
       }
       
+      this.liveTokensPerSec = 0;
       this._extractAndQueueSentences(sentenceBuffer, true);
       
       const endInferenceTime = performance.now();
@@ -892,7 +1006,8 @@ export class ChatStateManager {
   }
 
   _extractAndQueueSentences(buffer, isFinal = false) {
-    if (!this.enableVoiceResponse || this.isSpeechMutedForCurrentResponse) {
+    const isTtsAllowed = typeof window !== 'undefined' && window.LiteRTConfig ? window.LiteRTConfig.get('voiceTts') : true;
+    if (!this.enableVoiceResponse || !isTtsAllowed || this.isSpeechMutedForCurrentResponse) {
       return isFinal ? "" : buffer;
     }
     let boundaryRegex = /[.!?](\s+|\n|$)/g;

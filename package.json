@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
-    "test": "node test/state.test.js"
+    "test": "node --test test/*.test.js"
   },
   "keywords": [],
   "author": "",

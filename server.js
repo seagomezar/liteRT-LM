@@ -61,7 +61,19 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}/`);
+let currentPort = PORT;
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
+    currentPort++;
+    server.listen(currentPort);
+  } else {
+    console.error('Server error:', err);
+  }
+});
+
+server.listen(currentPort, () => {
+  console.log(`Server running at http://localhost:${currentPort}/`);
   console.log(`Press Ctrl+C to stop.`);
 });

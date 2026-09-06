@@ -1,4 +1,16 @@
-// Local RAG System for LiteRT-LM Chat
+/**
+ * Local RAG System for LiteRT-LM Chat
+ * High-performance, fully in-browser Document Retrieval-Augmented Generation.
+ * Features:
+ * - Multilingual Unicode tokenization (supports accented Latin, Asian, and European alphabets)
+ * - BM25 / Normalized TF-IDF relevance scoring
+ * - LocalStorage persistence of indexed documents
+ * - PDF, Markdown, TXT, CSV, and JSON parsing
+ * - Detailed citation snippets and prompt augmentation
+ */
+
+import { LiteRTConfig } from './config.js';
+
 const STOP_WORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', 'arent', 'as', 'at',
   'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by', 'can', 'cant', 'cannot',
@@ -12,57 +24,126 @@ const STOP_WORDS = new Set([
   'they', 'theyd', 'theyll', 'theyre', 'theyve', 'this', 'those', 'through', 'to', 'too', 'under', 'until', 'up',
   'very', 'was', 'wasnt', 'we', 'wed', 'well', 'were', 'weve', 'werent', 'what', 'whats', 'when', 'whens', 'where',
   'wheres', 'which', 'while', 'who', 'whos', 'whom', 'why', 'whys', 'with', 'wont', 'would', 'wouldnt', 'you',
-  'youd', 'youll', 'youre', 'youve', 'your', 'yours', 'yourself', 'yourselves'
+  'youd', 'youll', 'youre', 'youve', 'your', 'yours', 'yourself', 'yourselves',
+  // Multilingual common stopwords
+  'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del', 'en', 'para', 'por', 'con', 'que', 'como', 'su',
+  'le', 'les', 'des', 'du', 'et', 'dans', 'sur', 'pour', 'qui', 'avec', 'und', 'der', 'die', 'das', 'den', 'dem', 'mit'
 ]);
 
+const RAG_STORAGE_KEY = "litertlm-rag-documents";
+
+/**
+ * Robust multilingual tokenizer using Unicode property escapes
+ */
 export function tokenize(text) {
+  if (!text || typeof text !== 'string') return [];
   return text
     .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
     .split(/\s+/)
     .filter(w => w.length > 1 && !STOP_WORDS.has(w));
 }
 
 export class LocalRAGIndex {
-  constructor() {
-    this.documents = new Map(); // filename -> fullText
-    this.chunks = [];           // list of { id, filename, text, tokens }
+  constructor(options = {}) {
+    this.documents = new Map(); // filename -> { text, timestamp, size }
+    this.chunks = [];           // list of { id, filename, text, tokens, length }
     this.idf = new Map();       // term -> IDF value
+    this.avgChunkLength = 0;
     this.enabled = true;
     this.listeners = [];
-    this.logs = [];             // Search logs for visual feedback
+    this.logs = [];
+    this.autoPersist = options.autoPersist === true;
+
+    // Sync with LiteRTConfig if available
+    if (LiteRTConfig) {
+      this.enabled = LiteRTConfig.get('rag');
+      LiteRTConfig.subscribe((cfg) => {
+        const shouldEnable = Boolean(cfg.rag);
+        if (this.enabled !== shouldEnable) {
+          this.enabled = shouldEnable;
+          this.addLog(shouldEnable ? 'RAG Engine activated by configuration.' : 'RAG Engine deactivated by configuration.');
+          this.notifyUpdate();
+        }
+      });
+    }
+
+    // Hydrate persisted documents from localStorage if autoPersist is true
+    if (this.autoPersist) {
+      this.loadFromStorage();
+    }
   }
 
   enable() {
     this.enabled = true;
+    if (LiteRTConfig) LiteRTConfig.set('rag', true);
     this.addLog('RAG System enabled.');
     this.notifyUpdate();
   }
 
   disable() {
     this.enabled = false;
+    if (LiteRTConfig) LiteRTConfig.set('rag', false);
     this.addLog('RAG System disabled.');
     this.notifyUpdate();
   }
 
   addListener(callback) {
-    this.listeners.push(callback);
+    if (typeof callback === 'function') {
+      this.listeners.push(callback);
+    }
   }
 
   notifyUpdate() {
     for (const callback of this.listeners) {
-      try { callback(); } catch (err) { console.error(err); }
+      try { callback(); } catch (err) { console.error("[RAG] Listener error:", err); }
     }
   }
 
-  addDocument(filename, text) {
-    if (this.documents.has(filename)) {
-      this.removeDocument(filename); // Overwrite if it already exists
+  loadFromStorage() {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      const raw = window.localStorage.getItem(RAG_STORAGE_KEY);
+      if (!raw) return;
+      const stored = JSON.parse(raw);
+      if (Array.isArray(stored)) {
+        this.documents.clear();
+        this.chunks = [];
+        for (const doc of stored) {
+          if (doc.filename && doc.text) {
+            this.indexDocumentInternal(doc.filename, doc.text, doc.timestamp || Date.now(), false);
+          }
+        }
+        this.recalculateIDF();
+        if (this.documents.size > 0) {
+          this.addLog(`Restored ${this.documents.size} saved documents from local storage.`);
+        }
+      }
+    } catch (err) {
+      console.warn("[RAG] Could not restore documents from storage:", err);
     }
-    
-    this.documents.set(filename, text);
+  }
 
-    // Text chunking: 400 characters sliding window with 100 character overlap
+  saveToStorage() {
+    if (!this.autoPersist || typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      const exportData = [];
+      for (const [filename, meta] of this.documents.entries()) {
+        exportData.push({
+          filename,
+          text: meta.text,
+          timestamp: meta.timestamp || Date.now(),
+          size: meta.size || meta.text.length
+        });
+      }
+      window.localStorage.setItem(RAG_STORAGE_KEY, JSON.stringify(exportData));
+    } catch (err) {
+      console.warn("[RAG] Failed to persist documents to storage:", err);
+    }
+  }
+
+  indexDocumentInternal(filename, text, timestamp = Date.now(), shouldSave = true) {
+    // Sliding window text chunking: 400 chars with 100 char overlap
     const chunkSize = 400;
     const overlap = 100;
     let index = 0;
@@ -71,20 +152,42 @@ export class LocalRAGIndex {
     while (index < text.length) {
       const chunkText = text.substring(index, index + chunkSize).trim();
       if (chunkText.length > 10) {
-        docChunks.push({
-          id: `${filename}-${index}`,
-          filename,
-          text: chunkText,
-          tokens: tokenize(chunkText)
-        });
+        const tokens = tokenize(chunkText);
+        if (tokens.length > 0) {
+          docChunks.push({
+            id: `${filename}-${index}`,
+            filename,
+            text: chunkText,
+            tokens,
+            length: tokens.length
+          });
+        }
       }
       index += chunkSize - overlap;
       if (index >= text.length - overlap) break;
     }
 
-    this.chunks = [...this.chunks, ...docChunks];
-    this.recalculateIDF();
-    this.addLog(`Document added: "${filename}" (${docChunks.length} chunks indexed)`);
+    this.documents.set(filename, {
+      text,
+      timestamp,
+      size: text.length,
+      chunksCount: docChunks.length
+    });
+
+    // Replace chunks for this filename
+    this.chunks = this.chunks.filter(c => c.filename !== filename).concat(docChunks);
+
+    if (shouldSave) {
+      this.recalculateIDF();
+      this.saveToStorage();
+    }
+  }
+
+  addDocument(filename, text) {
+    if (!filename || !text) return;
+    this.indexDocumentInternal(filename, text, Date.now(), true);
+    const chunkCount = this.chunks.filter(c => c.filename === filename).length;
+    this.addLog(`Indexed document: "${filename}" (${chunkCount} passages extracted)`);
     this.notifyUpdate();
   }
 
@@ -93,7 +196,8 @@ export class LocalRAGIndex {
     this.documents.delete(filename);
     this.chunks = this.chunks.filter(c => c.filename !== filename);
     this.recalculateIDF();
-    this.addLog(`Document removed: "${filename}"`);
+    this.saveToStorage();
+    this.addLog(`Expunged document: "${filename}"`);
     this.notifyUpdate();
   }
 
@@ -101,32 +205,50 @@ export class LocalRAGIndex {
     this.documents.clear();
     this.chunks = [];
     this.idf.clear();
-    this.addLog('All documents cleared.');
+    this.avgChunkLength = 0;
+    this.saveToStorage();
+    this.addLog('All documents and passages cleared from knowledge base.');
     this.notifyUpdate();
   }
 
   recalculateIDF() {
     this.idf.clear();
     const N = this.chunks.length;
-    if (N === 0) return;
+    if (N === 0) {
+      this.avgChunkLength = 0;
+      return;
+    }
 
+    let totalLength = 0;
     const df = {};
+
     for (const chunk of this.chunks) {
+      totalLength += chunk.length;
       const uniqueTerms = new Set(chunk.tokens);
       for (const term of uniqueTerms) {
         df[term] = (df[term] || 0) + 1;
       }
     }
 
+    this.avgChunkLength = totalLength / N;
+
     for (const term in df) {
-      // Standard BM25-friendly IDF formulation
+      // Okapi BM25 style IDF formulation
       this.idf.set(term, Math.log(1 + (N - df[term] + 0.5) / (df[term] + 0.5)));
     }
   }
 
-  search(query, k = 3) {
+  /**
+   * BM25-based similarity search
+   * k1 = 1.2, b = 0.75
+   */
+  search(query, k = 3, minScore = 0.05) {
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0 || this.chunks.length === 0) return [];
+
+    const k1 = 1.2;
+    const b = 0.75;
+    const avgLen = this.avgChunkLength || 1;
 
     const queryTF = {};
     for (const term of queryTokens) {
@@ -136,7 +258,6 @@ export class LocalRAGIndex {
     const results = [];
     for (const chunk of this.chunks) {
       let score = 0;
-      
       const chunkTF = {};
       for (const term of chunk.tokens) {
         chunkTF[term] = (chunkTF[term] || 0) + 1;
@@ -144,39 +265,45 @@ export class LocalRAGIndex {
 
       for (const term in queryTF) {
         if (chunkTF[term]) {
-          const tfVal = chunkTF[term] / chunk.tokens.length; // Normalized Term Frequency
+          const tf = chunkTF[term];
           const idfVal = this.idf.get(term) || 0;
-          score += tfVal * idfVal * queryTF[term];
+          const numerator = tf * (k1 + 1);
+          const denominator = tf + k1 * (1 - b + b * (chunk.length / avgLen));
+          score += idfVal * (numerator / denominator) * queryTF[term];
         }
       }
 
-      if (score > 0) {
+      if (score >= minScore) {
         results.push({ chunk, score });
       }
     }
 
-    // Sort by descending score
     results.sort((a, b) => b.score - a.score);
     return results.slice(0, k);
   }
 
+  /**
+   * Generates augmented prompt with context cards and source citations
+   */
   getRagPrompt(query) {
     if (!this.enabled || this.documents.size === 0) {
       return query;
     }
-    const matches = this.search(query, 3);
+
+    const matches = this.search(query, 3, 0.05);
     if (matches.length === 0) {
-      this.addLog(`Query: "${query}" -> No matching contexts found.`);
+      this.addLog(`Prompt query: "${query.substring(0, 40)}..." -> No relevant passages found.`);
       return query;
     }
 
-    // Print matching details to logs
-    const logInfo = matches.map(m => `[Score: ${m.score.toFixed(3)}] ${m.chunk.filename}: "${m.chunk.text.substring(0, 45)}..."`).join('\n');
-    this.addLog(`Query: "${query}"\n${logInfo}`);
+    const logInfo = matches
+      .map(m => `[Score: ${m.score.toFixed(3)}] ${m.chunk.filename}: "${m.chunk.text.substring(0, 45)}..."`)
+      .join('\n');
+    this.addLog(`Knowledge Match for "${query.substring(0, 40)}...":\n${logInfo}`);
     this.notifyUpdate();
 
     const contextText = matches
-      .map((m, i) => `[Source Document: ${m.chunk.filename} (Match Score: ${m.score.toFixed(4)})]\n${m.chunk.text}`)
+      .map((m, i) => `[Source Document #${i + 1}: ${m.chunk.filename} (Confidence: ${(Math.min(1, m.score / 2) * 100).toFixed(0)}%)]\n${m.chunk.text}`)
       .join('\n\n---\n\n');
 
     return `Context from uploaded documents:
@@ -194,11 +321,74 @@ Question: ${query}`;
     this.logs.unshift(`[${timestamp}] ${message}`);
     if (this.logs.length > 20) this.logs.pop();
   }
+
+  /**
+   * Ingest a File object (PDF, TXT, MD, CSV, JSON)
+   */
+  async ingestFile(file) {
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      throw new Error(`File "${file.name}" exceeds 15MB limit.`);
+    }
+
+    const lowerName = file.name.toLowerCase();
+
+    if (lowerName.endsWith('.pdf')) {
+      this.addLog(`Parsing Microfilm PDF: "${file.name}"...`);
+      const text = await this.extractPdfText(file);
+      if (!text.trim()) {
+        throw new Error(`No extractable text found in "${file.name}". It might be an image-only scan.`);
+      }
+      this.addDocument(file.name, text);
+    } else {
+      const text = await file.text();
+      this.addDocument(file.name, text);
+    }
+  }
+
+  async extractPdfText(file) {
+    if (typeof window === 'undefined') {
+      throw new Error("PDF extraction is only available in browser environments.");
+    }
+    const pdfjsLib = await this.loadPdfJS();
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n';
+    }
+    return fullText;
+  }
+
+  async loadPdfJS() {
+    if (typeof window !== 'undefined' && window.pdfjsLib) {
+      return window.pdfjsLib;
+    }
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+      script.onload = () => {
+        if (window.pdfjsLib) {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+          resolve(window.pdfjsLib);
+        } else {
+          reject(new Error("pdfjsLib not found on window."));
+        }
+      };
+      script.onerror = () => reject(new Error("Failed to load PDF.js from CDN."));
+      document.head.appendChild(script);
+    });
+  }
 }
 
-// In environment with window, bind globally
+export const ragIndex = new LocalRAGIndex({ autoPersist: true });
+
 if (typeof window !== 'undefined') {
-  window.ragIndex = new LocalRAGIndex();
-  window.getRagPrompt = (query) => window.ragIndex.getRagPrompt(query);
-  console.log('[RAG] Local RAG engine initialized successfully and hooked to window.getRagPrompt.');
+  window.ragIndex = ragIndex;
+  window.getRagPrompt = (query) => ragIndex.getRagPrompt(query);
 }

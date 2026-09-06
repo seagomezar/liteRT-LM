@@ -2,9 +2,11 @@ import { LitElement, html, css } from 'https://cdn.jsdelivr.net/npm/lit@3.1.2/+e
 import { unsafeHTML } from 'https://cdn.jsdelivr.net/npm/lit@3.1.2/directives/unsafe-html/+esm';
 import { marked } from 'https://cdn.jsdelivr.net/npm/marked@12.0.0/+esm';
 import hljs from 'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/es/highlight.min.js';
-import { ChatStateManager } from './state.js';
+import { ChatStateManager, LANGUAGE_CODES } from './state.js';
+import { LiteRTConfig, DEFAULT_FEATURES, FEATURE_METADATA } from './config.js';
+import { ragIndex } from './rag.js';
 
-// Setup marked renderer with custom code block highlight integration
+// Setup marked renderer with Punch-Card code block styling
 const renderer = new marked.Renderer();
 renderer.code = function({ text, lang }) {
   const codeText = text;
@@ -27,12 +29,24 @@ renderer.code = function({ text, lang }) {
     if (!language) language = "code";
   }
 
-  // Base64 encode the raw code so Copy & HTML preview scripts can retrieve it safely without corruption
+  // Base64 encode the raw code so Copy & HTML preview scripts can retrieve it safely
   const base64Code = btoa(unescape(encodeURIComponent(codeText)));
+  const isCodePreviewEnabled = LiteRTConfig ? LiteRTConfig.get('codePreview') : true;
+  const isHtml = language === 'html' || language === 'xml';
   
   return `
-    <div class="code-container" data-code="${base64Code}" data-lang="${language}">
-      <pre class="code-content-pre"><code class="hljs language-${language}">${highlighted}</code></pre>
+    <div class="punch-card-code" data-code="${base64Code}" data-lang="${language}">
+      <div class="punch-card-header">
+        <span style="display:flex; align-items:center; gap:6px;">
+          <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#d97706;"></span>
+          PUNCH CARD // ${language.toUpperCase()}
+        </span>
+        <div class="punch-card-actions">
+          <button class="btn-punch-action" onclick="window.copyCode(this)" title="Copy Code">PUNCH 📋</button>
+          ${isCodePreviewEnabled && isHtml ? `<button class="btn-punch-action" style="background:#d97706; color:#ffffff; border-color:#b45309;" onclick="window.previewHtml(this.closest('.punch-card-code'))" title="Run in Sandbox">PREVIEW ⚡</button>` : ''}
+        </div>
+      </div>
+      <pre class="punch-card-pre"><code class="hljs language-${language}">${highlighted}</code></pre>
     </div>
   `;
 };
@@ -40,7 +54,7 @@ renderer.code = function({ text, lang }) {
 marked.use({ renderer });
 
 /**
- * Phaser Scene for the procedural 2D cartoon avatar.
+ * Phaser Scene for Procedural 2D Vintage Cathode Robot Avatar
  */
 class AvatarScene extends Phaser.Scene {
   constructor() {
@@ -57,26 +71,26 @@ class AvatarScene extends Phaser.Scene {
     const cx = 120;
     const cy = 120;
 
-    // Head base (cute rounded rectangle with teal/blue border)
+    // Head base (cathode bezel)
     this.headGraphics = this.add.graphics();
-    this.headGraphics.fillStyle(0x151d30, 1);
-    this.headGraphics.lineStyle(3, 0x00c99e, 1);
-    this.headGraphics.fillRoundedRect(cx - 70, cy - 70, 140, 140, 30);
-    this.headGraphics.strokeRoundedRect(cx - 70, cy - 70, 140, 140, 30);
+    this.headGraphics.fillStyle(0x141920, 1);
+    this.headGraphics.lineStyle(3, 0xd97706, 1);
+    this.headGraphics.fillRoundedRect(cx - 70, cy - 70, 140, 140, 24);
+    this.headGraphics.strokeRoundedRect(cx - 70, cy - 70, 140, 140, 24);
 
     // Antenna
     this.antennaGraphics = this.add.graphics();
-    this.antennaGraphics.lineStyle(4, 0x00c99e, 1);
+    this.antennaGraphics.lineStyle(3, 0xd97706, 1);
     this.antennaGraphics.lineBetween(cx, cy - 70, cx, cy - 95);
-    this.antennaTip = this.add.circle(cx, cy - 100, 8, 0x00c99e);
+    this.antennaTip = this.add.circle(cx, cy - 98, 7, 0xd97706);
 
-    // Eyes (glowing blue circles that blink)
-    this.eyeLeft = this.add.circle(cx - 30, cy - 15, 12, 0x3b82f6);
-    this.eyeRight = this.add.circle(cx + 30, cy - 15, 12, 0x3b82f6);
+    // Eyes (glowing sage pilot lamps)
+    this.eyeLeft = this.add.circle(cx - 30, cy - 15, 11, 0x059669);
+    this.eyeRight = this.add.circle(cx + 30, cy - 15, 11, 0x059669);
     this.eyeLeft.setStrokeStyle(2, 0xffffff);
     this.eyeRight.setStrokeStyle(2, 0xffffff);
 
-    // Mouth graphics
+    // Mouth
     this.mouthGraphics = this.add.graphics();
     this.drawMouth(0.1);
 
@@ -91,18 +105,18 @@ class AvatarScene extends Phaser.Scene {
 
   drawMouth(heightPercent) {
     this.mouthGraphics.clear();
-    this.mouthGraphics.fillStyle(0x00c99e, 1);
-    this.mouthGraphics.lineStyle(3, 0x00c99e, 1);
+    this.mouthGraphics.fillStyle(0xd97706, 1);
+    this.mouthGraphics.lineStyle(2, 0xd97706, 1);
 
     const cx = 120;
     const cy = 120;
     const mouthY = cy + 25;
-    const mouthWidth = 40;
+    const mouthWidth = 42;
 
     if (heightPercent <= 0.15) {
       this.mouthGraphics.lineBetween(cx - mouthWidth/2, mouthY, cx + mouthWidth/2, mouthY);
     } else {
-      const openHeight = 25 * heightPercent;
+      const openHeight = 24 * heightPercent;
       this.mouthGraphics.fillEllipse(cx, mouthY, mouthWidth, openHeight);
       this.mouthGraphics.strokeEllipse(cx, mouthY, mouthWidth, openHeight);
     }
@@ -125,24 +139,24 @@ class AvatarScene extends Phaser.Scene {
     this.timeCounter += delta;
 
     // Idle breathing animation shift
-    const idleOffset = Math.sin(this.timeCounter * 0.003) * 3;
+    const idleOffset = Math.sin(this.timeCounter * 0.003) * 2.5;
     this.eyeLeft.y = 120 - 15 + idleOffset;
     this.eyeRight.y = 120 - 15 + idleOffset;
-    this.antennaTip.y = 120 - 100 + idleOffset;
+    this.antennaTip.y = 120 - 98 + idleOffset;
 
     const cx = 120;
     const cy = 120 + idleOffset;
     this.headGraphics.clear();
-    this.headGraphics.fillStyle(0x151d30, 1);
-    this.headGraphics.lineStyle(3, 0x00c99e, 1);
-    this.headGraphics.fillRoundedRect(cx - 70, cy - 70, 140, 140, 30);
-    this.headGraphics.strokeRoundedRect(cx - 70, cy - 70, 140, 140, 30);
+    this.headGraphics.fillStyle(0x141920, 1);
+    this.headGraphics.lineStyle(3, 0xd97706, 1);
+    this.headGraphics.fillRoundedRect(cx - 70, cy - 70, 140, 140, 24);
+    this.headGraphics.strokeRoundedRect(cx - 70, cy - 70, 140, 140, 24);
 
     this.antennaGraphics.clear();
-    this.antennaGraphics.lineStyle(4, 0x00c99e, 1);
+    this.antennaGraphics.lineStyle(3, 0xd97706, 1);
     this.antennaGraphics.lineBetween(cx, cy - 70, cx, cy - 95);
 
-    // Dynamic mouth shapes/flaps when speaking
+    // Mouth movement during speech
     if (this.isSpeaking) {
       const mouthOpenness = 0.3 + Math.abs(Math.sin(this.timeCounter * 0.015)) * 0.7;
       this.drawMouth(mouthOpenness);
@@ -150,25 +164,18 @@ class AvatarScene extends Phaser.Scene {
       this.antennaTip.setScale(pulseScale);
     } else {
       this.drawMouth(0.1);
-      this.antennaTip.setScale(1.0);
+      this.antennaTip.setScale(1);
     }
   }
 }
 
 /**
  * LiteRTAvatar Component
- * Manages the Phaser JS instance lifecycle and updates speaking state.
  */
 export class LiteRTAvatar extends LitElement {
   static properties = {
     state: { type: Object }
   };
-
-  constructor() {
-    super();
-    this.game = null;
-    this.scene = null;
-  }
 
   createRenderRoot() {
     return this;
@@ -177,61 +184,58 @@ export class LiteRTAvatar extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.state.addHost(this);
-    setTimeout(() => this.initPhaser(), 80);
+  }
+
+  firstUpdated() {
+    const config = {
+      type: Phaser.AUTO,
+      width: 240,
+      height: 240,
+      parent: this.querySelector('#avatar-phaser-container'),
+      transparent: true,
+      scene: AvatarScene
+    };
+    this.game = new Phaser.Game(config);
+  }
+
+  updated() {
+    if (this.game && this.game.scene && this.game.scene.scenes[0]) {
+      this.game.scene.scenes[0].isSpeaking = this.state.isSpeaking;
+    }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.game) {
       this.game.destroy(true);
-      this.game = null;
-    }
-  }
-
-  initPhaser() {
-    const container = this.querySelector('#phaser-avatar-container');
-    if (!container || this.game || typeof Phaser === 'undefined') return;
-
-    this.scene = new AvatarScene();
-    const config = {
-      type: Phaser.AUTO,
-      width: 240,
-      height: 200,
-      parent: container,
-      transparent: true,
-      scene: [this.scene]
-    };
-
-    this.game = new Phaser.Game(config);
-  }
-
-  updated(changedProperties) {
-    super.updated(changedProperties);
-    if (this.scene) {
-      this.scene.isSpeaking = !!this.state.isSpeaking;
     }
   }
 
   render() {
+    if (!LiteRTConfig.get('avatar')) {
+      return html``;
+    }
+
     return html`
-      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; padding: 8px 0; border-bottom: 1px solid var(--border); background-color: var(--bg-card);">
-        <div id="phaser-avatar-container" style="width: 240px; height: 200px; display: flex; align-items: center; justify-content: center;">
-          ${typeof Phaser === 'undefined' ? html`<span style="color: var(--text-muted); font-size: 0.8rem;">Loading Phaser avatar...</span>` : ''}
+      <div class="avatar-cathode-frame">
+        <div class="avatar-cathode-screen">
+          <div id="avatar-phaser-container"></div>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-          <div class="status-indicator ${this.state.isSpeaking ? 'ready' : 'loading'}" style="width: 8px; height: 8px; margin: 0; background-color: ${this.state.isSpeaking ? 'var(--teal)' : '#64748b'};"></div>
-          <span style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: ${this.state.isSpeaking ? 'var(--teal)' : 'var(--text-muted)'}; font-weight: bold;">
-            ${this.state.isSpeaking ? 'Avatar Status: Speaking' : 'Avatar Status: Idle'}
-          </span>
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 8px; padding: 0 4px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <div class="lamp-bulb ${this.state.isSpeaking ? 'active' : ''}"></div>
+            <span style="font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700; color: ${this.state.isSpeaking ? 'var(--sage)' : '#94a3b8'};">
+              ${this.state.isSpeaking ? 'TALK // ACTIVE' : 'TALK // STANDBY'}
+            </span>
+          </div>
           ${this.state.isSpeaking ? html`
             <button 
-              id="btn-stop-audio"
-              class="btn-stop-audio"
-              style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #ef4444; font-size: 0.65rem; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-weight: bold; transition: all 0.15s; margin-left: 4px;"
+              class="btn-punch-action"
+              style="background: #dc2626; color: #ffffff; border-color: #991b1b;"
               @click=${() => this.state.stopSpeechOnly()}
-              title="Stop speaking current response"
+              title="Mute Speech"
             >
-              Stop Audio
+              MUTE ✕
             </button>
           ` : ""}
         </div>
@@ -259,7 +263,6 @@ const MODEL_LIST = [
 
 /**
  * CustomDropdown Component
- * Styled dropdown component representing options inside a custom container.
  */
 export class CustomDropdown extends LitElement {
   static properties = {
@@ -274,75 +277,80 @@ export class CustomDropdown extends LitElement {
   }
 
   createRenderRoot() {
-    return this; // Light DOM rendering for full CSS sharing
+    return this;
   }
 
   connectedCallback() {
     super.connectedCallback();
-    this._onOutsideClick = this.onOutsideClick.bind(this);
-    document.addEventListener("click", this._onOutsideClick);
+    this._handleOutsideClick = (e) => {
+      if (!this.contains(e.target)) {
+        this.isOpen = false;
+      }
+    };
+    document.addEventListener("click", this._handleOutsideClick);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    document.removeEventListener("click", this._onOutsideClick);
+    document.removeEventListener("click", this._handleOutsideClick);
   }
 
-  onOutsideClick(e) {
-    if (!this.contains(e.target)) {
-      this.isOpen = false;
-    }
-  }
-
-  toggleDropdown(e) {
+  toggleOpen(e) {
     e.stopPropagation();
     this.isOpen = !this.isOpen;
   }
 
-  handleItemSelect(e, val) {
-    e.stopPropagation();
-    this.value = val;
+  selectOption(optPath) {
+    this.value = optPath;
     this.isOpen = false;
-    this.dispatchEvent(new CustomEvent("change", { detail: val }));
+    this.dispatchEvent(new CustomEvent("change", { detail: { value: optPath } }));
   }
 
   render() {
-    const selectedItem = MODEL_LIST.find(m => m.path === this.value);
-    const label = selectedItem ? selectedItem.name : "Select a model";
+    const selectedModel = MODEL_LIST.find(m => m.path === this.value) || {
+      name: this.value ? this.value.split("/").pop() : "Select Model...",
+      size: ""
+    };
 
     return html`
       <div style="position: relative; width: 100%;">
-        <button
-          class="dropdown-button ${this.isOpen ? 'open' : ''}"
-          style="display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box;"
-          @click=${this.toggleDropdown}
+        <div 
+          class="btn-tactile" 
+          style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 7px 10px;"
+          @click=${this.toggleOpen}
         >
-          ${label}
-        </button>
-        
-        <div class="dropdown-content ${this.isOpen ? 'show' : ''}" style="width: 100%;">
-          ${MODEL_LIST.map(m => {
-            const isCached = window.ragIndex?.enabled && window.ragIndex; // Checks placeholders
-            return html`
-              <div class="dropdown-item" @click=${(e) => this.handleItemSelect(e, m.path)}>
-                <span class="model-name">${m.name}</span>
-                <span class="download-badge" style="font-size: 0.6rem; color: var(--text-muted); opacity: 0.65;">
-                  ${m.size}
-                </span>
-              </div>
-            `;
-          })}
+          <div style="display: flex; flex-direction: column; align-items: flex-start; overflow: hidden;">
+            <span style="font-weight: 700; font-family: var(--font-mono); font-size: 0.78rem;">${selectedModel.name}</span>
+            ${selectedModel.size ? html`<span style="font-size: 0.65rem; color: var(--text-muted);">${selectedModel.size}</span>` : ""}
+          </div>
+          <span style="font-size: 0.65rem; color: var(--amber-dark);">▼</span>
         </div>
+
+        ${this.isOpen ? html`
+          <div style="position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-card); border: 2px solid var(--border-strong); border-radius: var(--radius-sm); z-index: 1000; box-shadow: 0 6px 16px rgba(0,0,0,0.15); display: flex; flex-direction: column;">
+            ${MODEL_LIST.map(m => html`
+              <div 
+                style="padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; justify-content: space-between; align-items: center;"
+                @click=${() => this.selectOption(m.path)}
+              >
+                <div>
+                  <div style="font-weight: 700; font-family: var(--font-mono); font-size: 0.78rem;">${m.name}</div>
+                  <div style="font-size: 0.65rem; color: var(--text-muted);">${m.size}</div>
+                </div>
+                ${this.value === m.path ? html`<span style="color: var(--sage); font-weight: bold;">✓</span>` : ""}
+              </div>
+            `)}
+          </div>
+        ` : ""}
       </div>
     `;
   }
 }
 customElements.define("custom-dropdown", CustomDropdown);
 
-
 /**
  * LiteRTSidebar Component
- * Renders LLM model selection, parameter sliders, cache actions, and wraps the RAG index panel.
+ * Hardware Rack containing Model Tuning Rack, Cache Manager, Audio Rack, RAG Hub, and Conversation Ledger.
  */
 export class LiteRTSidebar extends LitElement {
   static properties = {
@@ -356,247 +364,304 @@ export class LiteRTSidebar extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.state.addHost(this);
-  }
-
-  getTotalCacheSize() {
-    let sizeBytes = 0;
-    for (const [_, size] of this.state.cachedModels) {
-      sizeBytes += size;
-    }
-    return `${(sizeBytes / 1e9).toFixed(2)} GB`;
-  }
-
-  handleModelChange(e) {
-    const newPath = e.detail;
-    if (this.state.selectedModelPath !== newPath) {
-      this.state.selectedModelPath = newPath;
-      this.state.saveSettings();
-      this.state.loadModelWeights();
+    this._unsubConfig = LiteRTConfig.subscribe(() => this.requestUpdate());
+    if (ragIndex) {
+      ragIndex.addListener(() => this.requestUpdate());
     }
   }
 
-  handleRemoveCached(e, path) {
-    e.stopPropagation();
-    this.state.deleteModelFromCache(path);
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._unsubConfig) this._unsubConfig();
   }
 
-  handleSliderInput(e, property) {
-    const target = e.target;
-    let val;
-    if (target.type === "checkbox") {
-      val = target.checked;
-    } else if (target.type === "number") {
-      val = parseFloat(target.value);
-    } else {
-      val = target.value;
-    }
-    
-    this.state[property] = val;
+  handleModelSelect(e) {
+    this.state.selectedModelPath = e.detail.value;
     this.state.saveSettings();
+    this.state.requestUpdate();
   }
 
-  dismissSidebar() {
-    const sidebar = document.querySelector(".sidebar");
-    const overlay = document.querySelector(".sidebar-overlay");
-    sidebar?.classList.remove("open");
-    overlay?.classList.remove("open");
+  handleLocalFileSelect(e) {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      this.state.loadModelFromFile(file);
+    }
+  }
+
+  handleFaderInput(e, prop) {
+    const val = parseFloat(e.target.value);
+    this.state[prop] = isNaN(val) ? e.target.value : val;
+    this.state.saveSettings();
+    this.state.requestUpdate();
+  }
+
+  handleRagFileUpload(e) {
+    const files = e.target.files;
+    if (files) {
+      for (const file of files) {
+        ragIndex.ingestFile(file).catch(err => {
+          console.error(err);
+          ragIndex.addLog(`Error ingesting "${file.name}": ${err.message}`);
+        });
+      }
+    }
   }
 
   render() {
+    const isAvatar = LiteRTConfig.get('avatar');
+    const isAdvancedTuner = LiteRTConfig.get('advancedTuner');
+    const isModelCache = LiteRTConfig.get('modelCache');
+    const isVoiceTts = LiteRTConfig.get('voiceTts');
+    const isRag = LiteRTConfig.get('rag');
+
     return html`
-      <!-- Model Selection Group -->
-      <div class="control-group">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <h2 class="section-title" style="margin: 0; border: none; padding: 0;">Model Selection</h2>
-          <button id="btn-dismiss-sidebar" class="btn-dismiss-sidebar" aria-label="Dismiss Configurations" @click=${this.dismissSidebar}>Done</button>
-        </div>
+      <div style="display: flex; flex-direction: column; gap: 14px;">
         
-        <custom-dropdown
-          .value=${this.state.selectedModelPath}
-          @change=${this.handleModelChange}
-        >
-        </custom-dropdown>
-        
-        <!-- Caching Info & Actions -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 0.65rem; color: var(--text-muted);">
-          <span>Total Cached: <b style="color: var(--teal); font-family: ui-monospace, monospace;">${this.getTotalCacheSize()}</b></span>
-          ${this.state.cachedModels.size > 0 ? html`
-            <button class="clear-all-btn" title="Clear all model cache" @click=${() => this.state.clearAllCache()}>Clear all</button>
-          ` : ""}
-        </div>
-      </div>
+        <!-- Animated Cathode Avatar -->
+        ${isAvatar ? html`<litert-avatar .state=${this.state}></litert-avatar>` : ''}
 
-      <!-- Inference Settings Sliders -->
-      <div class="control-group" style="border-top: 1px solid var(--border); padding-top: 8px;">
-        <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;">
-          <label for="chat-language" style="font-size: 0.65rem;">Agent Language</label>
-          <select 
-            id="chat-language" 
-            .value=${this.state.chatLanguage} 
-            style="padding: 8px 4px; font-size: 0.72rem; width: 100%; box-sizing: border-box;" 
-            @change=${e => this.handleSliderInput(e, "chatLanguage")}
-          >
-            <option value="English">English</option>
-            <option value="Spanish">Spanish (Español)</option>
-            <option value="French">French (Français)</option>
-            <option value="German">German (Deutsch)</option>
-            <option value="Chinese">Chinese (中文)</option>
-            <option value="Japanese">Japanese (日本語)</option>
-            <option value="Portuguese">Portuguese (Português)</option>
-            <option value="Italian">Italian (Italiano)</option>
-          </select>
-        </div>
+        <!-- Model Selection & Tuning Rack -->
+        <div class="hardware-card">
+          <div class="hardware-card-title">
+            <span>Model Tuner Rack</span>
+            <span class="hardware-tag">WEBGPU</span>
+          </div>
 
-        <div style="display: flex; gap: 10px; margin-bottom: 6px;">
-          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
-            <label for="context-length" style="font-size: 0.65rem;">Context Length</label>
-            <input 
-              type="number" 
-              id="context-length" 
-              .value=${String(this.state.contextLength)} 
-              min="256" max="8192" step="256" 
-              style="padding: 8px 4px; font-size: 0.72rem; width: 100%; box-sizing: border-box; text-align: center;" 
-              @input=${e => this.handleSliderInput(e, "contextLength")}
-            >
-          </div>
-          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
-            <label for="max-output-tokens" style="font-size: 0.65rem;">Max Gen</label>
-            <input 
-              type="number" 
-              id="max-output-tokens" 
-              .value=${String(this.state.maxOutputTokens)} 
-              min="1" max="4096" step="64" 
-              style="padding: 8px 4px; font-size: 0.72rem; width: 100%; box-sizing: border-box; text-align: center;" 
-              @input=${e => this.handleSliderInput(e, "maxOutputTokens")}
-            >
-          </div>
-        </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted);">
+              Weights Target
+            </label>
+            <custom-dropdown 
+              .value=${this.state.selectedModelPath} 
+              @change=${this.handleModelSelect}
+            ></custom-dropdown>
 
-        <div style="display: flex; gap: 6px; align-items: flex-end;">
-          <div style="flex: 1.2; display: flex; flex-direction: column; gap: 4px;">
-            <label for="sampler-type" style="font-size: 0.65rem;">Sampler</label>
-            <select 
-              id="sampler-type" 
-              .value=${this.state.samplerType} 
-              style="padding: 8px 2px; font-size: 0.7rem; width: 100%; box-sizing: border-box;" 
-              @change=${e => this.handleSliderInput(e, "samplerType")}
-            >
-              <option value="greedy">Greedy</option>
-              <option value="top_k">Top-K</option>
-              <option value="top_p">Top-P</option>
-            </select>
-          </div>
-          <div style="flex: 0.9; display: flex; flex-direction: column; gap: 4px;">
-            <label for="temperature" style="font-size: 0.65rem;">Temp</label>
+            <!-- Load Local .litertlm File -->
             <input 
-              type="number" 
-              id="temperature" 
-              .value=${String(this.state.temperature)} 
-              min="0.0" max="2.0" step="0.1" 
-              style="padding: 8px 2px; font-size: 0.7rem; width: 100%; box-sizing: border-box; text-align: center;" 
-              @input=${e => this.handleSliderInput(e, "temperature")}
+              type="file" 
+              id="local-model-file" 
+              accept=".litertlm" 
+              style="display: none;" 
+              @change=${this.handleLocalFileSelect}
+            />
+            <button 
+              class="btn-tactile" 
+              style="font-size: 0.7rem; justify-content: center;"
+              @click=${() => this.querySelector('#local-model-file').click()}
             >
+              📂 LOAD LOCAL .LITERTLM FILE
+            </button>
           </div>
-          <div style="flex: 0.9; display: flex; flex-direction: column; gap: 4px;">
-            <label for="top-p" style="font-size: 0.65rem;">Top-P</label>
-            <input 
-              type="number" 
-              id="top-p" 
-              .value=${String(this.state.topP)} 
-              min="0.0" max="1.0" step="0.05" 
-              style="padding: 8px 2px; font-size: 0.7rem; width: 100%; box-sizing: border-box; text-align: center;" 
-              @input=${e => this.handleSliderInput(e, "topP")}
-            >
-          </div>
-          <div style="flex: 0.9; display: flex; flex-direction: column; gap: 4px;">
-            <label for="top-k" style="font-size: 0.65rem;">Top-K</label>
-            <input 
-              type="number" 
-              id="top-k" 
-              .value=${String(this.state.topK)} 
-              min="1" max="256" step="4" 
-              style="padding: 8px 2px; font-size: 0.7rem; width: 100%; box-sizing: border-box; text-align: center;" 
-              @input=${e => this.handleSliderInput(e, "topK")}
-            >
-          </div>
-        </div>
 
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; border-top: 1px dashed rgba(255, 255, 255, 0.1); padding-top: 8px;">
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <input 
-              type="checkbox" 
-              id="enable-thinking" 
-              .checked=${this.state.enableThinking} 
-              style="margin: 0; cursor: pointer;" 
-              @change=${e => this.handleSliderInput(e, "enableThinking")}
-            >
-            <label for="enable-thinking" style="font-size: 0.68rem; text-transform: none; cursor: pointer;">Enable Thinking (CoT)</label>
-          </div>
-          <button 
-            style="background: none; border: none; color: var(--teal); font-size: 0.65rem; cursor: pointer; padding: 2px 4px; font-weight: bold;" 
-            @click=${() => this.state.handleResetSettings()}
-          >
-            Reset
-          </button>
-        </div>
-      </div>
+          ${isAdvancedTuner ? html`
+            <!-- Hardware Sliders & Nixie Readouts -->
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px; border-top: 1px dashed var(--border); padding-top: 10px;">
+              
+              <div class="fader-control">
+                <div class="fader-header">
+                  <span>Temperature</span>
+                  <span class="nixie-badge">${this.state.temperature.toFixed(2)}</span>
+                </div>
+                <input 
+                  type="range" 
+                  class="hardware-slider" 
+                  min="0" max="2" step="0.05" 
+                  .value=${String(this.state.temperature)}
+                  @input=${e => this.handleFaderInput(e, 'temperature')}
+                />
+              </div>
 
-      <!-- App Status Footer -->
-      <div class="sidebar-status-footer">
-        <div class="status-card">
-          <div class="status-header">
-            <span class="status-indicator ${this.state.isModelLoading ? 'loading' : (this.state.engine ? 'ready' : '')}"></span>
-            <span>Status:</span>
-          </div>
-          <div class="status-text">${this.state.statusText}</div>
-          ${this.state.statusCacheText ? html`<div class="status-text" style="color:#eab308; margin-top:4px;">${this.state.statusCacheText}</div>` : ""}
-          
-          ${this.state.isModelLoading ? html`
-            <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px;">
-              ${Array.from(this.state.downloadProgresses.entries()).map(([filename, progress]) => {
-                const speed = this.state.downloadSpeeds.get(filename) || "";
-                return html`
-                  <div style="font-size: 0.62rem; display: flex; justify-content: space-between; color: var(--teal);">
-                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px;">${filename}</span>
-                    <span>${progress}%</span>
-                  </div>
-                  <div style="width: 100%; height: 4px; background-color: var(--border); border-radius: 2px; overflow: hidden;">
-                    <div style="width: ${progress}%; height: 100%; background-color: var(--teal); transition: width 0.1s;"></div>
-                  </div>
-                  <div style="font-size: 0.58rem; color: var(--text-muted); text-align: right; margin-top: 2px;">
-                    ${speed}
-                  </div>
-                `;
-              })}
-              ${this.state.downloadAbortController ? html`
-                <button class="btn btn-secondary" style="width: 100%; font-size: 0.7rem; padding: 4px 8px; height: 22px; line-height: 1; color: #ef4444; border-color: rgba(239, 68, 68, 0.35);" @click=${() => this.state.cancelDownload()}>
-                  Cancel Download
-                </button>
-              ` : ""}
+              <div class="fader-control">
+                <div class="fader-header">
+                  <span>Top-K Sampling</span>
+                  <span class="nixie-badge">${this.state.topK}</span>
+                </div>
+                <input 
+                  type="range" 
+                  class="hardware-slider" 
+                  min="1" max="128" step="1" 
+                  .value=${String(this.state.topK)}
+                  @input=${e => this.handleFaderInput(e, 'topK')}
+                />
+              </div>
+
+              <div class="fader-control">
+                <div class="fader-header">
+                  <span>Top-P Sampling</span>
+                  <span class="nixie-badge">${this.state.topP.toFixed(2)}</span>
+                </div>
+                <input 
+                  type="range" 
+                  class="hardware-slider" 
+                  min="0.1" max="1" step="0.05" 
+                  .value=${String(this.state.topP)}
+                  @input=${e => this.handleFaderInput(e, 'topP')}
+                />
+              </div>
+
+              <div class="fader-control">
+                <div class="fader-header">
+                  <span>Context Length</span>
+                  <span class="nixie-badge">${this.state.contextLength}</span>
+                </div>
+                <input 
+                  type="range" 
+                  class="hardware-slider" 
+                  min="1024" max="8192" step="512" 
+                  .value=${String(this.state.contextLength)}
+                  @input=${e => this.handleFaderInput(e, 'contextLength')}
+                />
+              </div>
             </div>
           ` : ""}
+        </div>
 
-          <!-- Performance Metrics -->
-          <div class="metrics-container" style="margin-top: 6px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); padding-top: 8px;">
-            <div class="metric-row" style="display: flex; justify-content: space-between; font-size: 0.75rem; font-family: inherit;">
-              <span style="color: var(--text-muted);">Load Time:</span>
-              <span id="metric-load" class="metric-val" style="color: var(--teal); font-weight: bold;">${this.state.metricLoadTime}</span>
+        ${isModelCache ? html`
+          <!-- Vacuum-Tube Model Cache Storage -->
+          <div class="hardware-card">
+            <div class="hardware-card-title">
+              <span>Cache Storage</span>
+              <span class="hardware-tag">OFFLINE</span>
+            </div>
+            <div class="vacuum-meter">
+              <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.68rem;">
+                <span style="color: #94a3b8;">STORAGE STATUS:</span>
+                <span style="color: #38bdf8;">${this.state.cachedModels.size} MODEL(S)</span>
+              </div>
+              <div class="tube-bar-track">
+                <div class="tube-bar-fill" style="width: ${this.state.cachedModels.size > 0 ? '65%' : '0%'};"></div>
+              </div>
+            </div>
+            <button 
+              class="btn-tactile" 
+              style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); justify-content: center; font-size: 0.68rem;"
+              @click=${() => this.state.clearAllCache()}
+            >
+              PURGE CACHE STORAGE ✕
+            </button>
+          </div>
+        ` : ""}
+
+        ${isVoiceTts ? html`
+          <!-- Audio & Language Rack -->
+          <div class="hardware-card">
+            <div class="hardware-card-title">
+              <span>Voice & Multilingual</span>
+              <span class="hardware-tag">AUDIO</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase;">Voice Output:</span>
+              <div class="toggle-switch-wrapper">
+                <label class="retro-toggle">
+                  <input 
+                    type="checkbox" 
+                    .checked=${this.state.enableVoiceResponse} 
+                    @change=${(e) => {
+                      this.state.enableVoiceResponse = e.target.checked;
+                      this.state.saveSettings();
+                      this.state.requestUpdate();
+                    }}
+                  />
+                  <span class="retro-toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px;">
+              <label style="font-size: 0.68rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">
+                Language Channel
+              </label>
+              <select 
+                class="btn-tactile" 
+                style="width: 100%; font-family: var(--font-mono); font-size: 0.75rem;"
+                .value=${this.state.chatLanguage}
+                @change=${(e) => {
+                  this.state.chatLanguage = e.target.value;
+                  this.state.saveSettings();
+                  this.state.requestUpdate();
+                }}
+              >
+                ${Object.keys(LANGUAGE_CODES).map(lang => html`<option value="${lang}">${lang}</option>`)}
+              </select>
             </div>
           </div>
-        </div>
-        
-        <!-- Placeholder for RAG System panel injected dynamically -->
-        <div id="rag-sidebar-panel"></div>
+        ` : ""}
+
+        ${isRag ? html`
+          <!-- Document RAG Hub & Knowledge Base -->
+          <div class="hardware-card">
+            <div class="hardware-card-title">
+              <span>Document RAG Cabinet</span>
+              <div class="toggle-switch-wrapper">
+                <label class="retro-toggle">
+                  <input 
+                    type="checkbox" 
+                    .checked=${ragIndex.enabled} 
+                    @change=${(e) => {
+                      if (e.target.checked) ragIndex.enable();
+                      else ragIndex.disable();
+                    }}
+                  />
+                  <span class="retro-toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Ingestion Dropzone -->
+            <input 
+              type="file" 
+              id="rag-upload-input" 
+              multiple 
+              accept=".pdf,.txt,.md,.csv,.json" 
+              style="display: none;" 
+              @change=${this.handleRagFileUpload}
+            />
+            <div 
+              style="border: 2px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 10px; text-align: center; background: var(--bg-inset); cursor: pointer;"
+              @click=${() => this.querySelector('#rag-upload-input').click()}
+            >
+              <div style="font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: var(--text-ink);">
+                + INGEST PAPERS / MICROFILM
+              </div>
+              <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;">
+                PDF, Markdown, TXT, CSV, JSON
+              </div>
+            </div>
+
+            <!-- Stats -->
+            <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted);">
+              <span>ARCHIVES: <b style="color: var(--text-ink);">${ragIndex.documents.size}</b></span>
+              <span>CHUNKS: <b style="color: var(--text-ink);">${ragIndex.chunks.length}</b></span>
+            </div>
+
+            <!-- Indexed Documents List -->
+            <div style="display: flex; flex-direction: column; gap: 4px; max-height: 110px; overflow-y: auto;">
+              ${Array.from(ragIndex.documents.entries()).map(([filename, doc]) => html`
+                <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-inset); padding: 4px 8px; border-radius: 2px; font-family: var(--font-mono); font-size: 0.68rem;">
+                  <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;">${filename}</span>
+                  <button 
+                    style="background: none; border: none; color: #ef4444; font-weight: bold; cursor: pointer; padding: 0 4px;"
+                    @click=${() => ragIndex.removeDocument(filename)}
+                  >✕</button>
+                </div>
+              `)}
+            </div>
+
+            <!-- Ticker Tape Activity Log -->
+            <div style="background: #141920; border: 1px solid #2d3748; border-radius: var(--radius-sm); padding: 6px 8px; font-family: var(--font-mono); font-size: 0.62rem; color: #94a3b8; max-height: 80px; overflow-y: auto; white-space: pre-wrap;">
+              ${ragIndex.logs.length > 0 ? ragIndex.logs.join('\n') : "SYSTEM READY. AWAITING INGESTION."}
+            </div>
+          </div>
+        ` : ""}
+
       </div>
     `;
   }
 }
 customElements.define("litert-sidebar", LiteRTSidebar);
 
-
 /**
  * LiteRTChatWindow Component
- * Renders chat history messages bubble timeline and prompt action items.
+ * Manila Card conversation timeline and Typewriter Ribbon prompt dock.
  */
 export class LiteRTChatWindow extends LitElement {
   static properties = {
@@ -610,285 +675,322 @@ export class LiteRTChatWindow extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.state.addHost(this);
-    this._onTextareaKeyDown = this.onTextareaKeyDown.bind(this);
+    this._unsubConfig = LiteRTConfig.subscribe(() => this.requestUpdate());
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._unsubConfig) this._unsubConfig();
   }
 
   firstUpdated() {
-    // Expose global hooks for code copy and HTML preview
+    // Global hooks for code copy and HTML preview
     window.previewHtml = (element) => {
       const b64 = element.getAttribute("data-code");
       if (b64) {
-        try {
-          const rawCode = decodeURIComponent(escape(atob(b64)));
-          const iframe = document.getElementById("preview-iframe");
-          const overlay = document.getElementById("preview-overlay");
-          if (iframe && overlay) {
-            iframe.srcdoc = rawCode;
-            overlay.style.display = "flex";
-          }
-        } catch (err) {
-          console.error("[LiteRT-LM] HTML decode failed:", err);
+        const decoded = decodeURIComponent(escape(atob(b64)));
+        const overlay = document.getElementById("preview-overlay");
+        const iframe = document.getElementById("preview-iframe");
+        const closeBtn = document.getElementById("btn-close-preview");
+        if (overlay && iframe && closeBtn) {
+          iframe.srcdoc = decoded;
+          overlay.style.display = "flex";
+          closeBtn.onclick = () => {
+            overlay.style.display = "none";
+            iframe.srcdoc = "";
+          };
         }
       }
     };
 
-    window.copyCodeBlock = (element) => {
-      const b64 = element.getAttribute("data-code");
+    window.copyCode = (button) => {
+      const container = button.closest(".punch-card-code");
+      const b64 = container.getAttribute("data-code");
       if (b64) {
-        try {
-          const rawCode = decodeURIComponent(escape(atob(b64)));
-          navigator.clipboard.writeText(rawCode).then(() => {
-            element.textContent = "Copied!";
-            setTimeout(() => { element.textContent = "Copy"; }, 2000);
-          }).catch(err => console.error("[LiteRT-LM] Copy failed:", err));
-        } catch (err) {
-          console.error("[LiteRT-LM] Decode failed:", err);
-        }
+        const decoded = decodeURIComponent(escape(atob(b64)));
+        navigator.clipboard.writeText(decoded).then(() => {
+          const original = button.textContent;
+          button.textContent = "COPIED ✓";
+          setTimeout(() => { button.textContent = original; }, 1500);
+        });
       }
     };
   }
 
-  updated(changedProperties) {
-    super.updated(changedProperties);
-    this.autoScrollToBottom();
-    this.initializeCodeBlocks();
-  }
-
-  autoScrollToBottom() {
-    const chatContainer = this.querySelector(".chat-messages");
-    if (chatContainer) {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-  }
-
-  initializeCodeBlocks() {
-    // Process code blocks inside markdown replies to inject modern headers
-    this.querySelectorAll(".code-container").forEach(container => {
-      if (container.querySelector(".code-header")) return;
-      
-      const b64 = container.getAttribute("data-code") || "";
-      const lang = container.getAttribute("data-lang") || "";
-      
-      const headerDiv = document.createElement("div");
-      headerDiv.className = "code-header";
-      
-      const langSpan = document.createElement("span");
-      langSpan.className = "code-lang";
-      langSpan.textContent = lang;
-      headerDiv.appendChild(langSpan);
-      
-      const actionsDiv = document.createElement("div");
-      actionsDiv.style.display = "flex";
-      actionsDiv.style.gap = "6px";
-      
-      // If language is html, add a Live Preview trigger
-      if (lang === "html" || lang === "xml") {
-        const previewBtn = document.createElement("button");
-        previewBtn.className = "btn-preview-code";
-        previewBtn.textContent = "Preview";
-        previewBtn.setAttribute("data-code", b64);
-        previewBtn.addEventListener("click", () => window.previewHtml(previewBtn));
-        actionsDiv.appendChild(previewBtn);
-      }
-      
-      const copyBtn = document.createElement("button");
-      copyBtn.className = "btn-copy-code";
-      copyBtn.textContent = "Copy";
-      copyBtn.setAttribute("data-code", b64);
-      copyBtn.addEventListener("click", () => window.copyCodeBlock(copyBtn));
-      actionsDiv.appendChild(copyBtn);
-      
-      headerDiv.appendChild(actionsDiv);
-      container.insertBefore(headerDiv, container.firstChild);
-    });
-  }
-
-  onTextareaKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      this.handleSend();
-    }
-  }
-
-  handleSend() {
-    const textarea = this.querySelector("#chat-input-textarea");
-    if (textarea && textarea.value.trim() && !this.state.isGenerating) {
-      const text = textarea.value.trim();
+  handlePromptSubmit(e) {
+    e.preventDefault();
+    const textarea = this.querySelector('#terminal-prompt-input');
+    if (!textarea) return;
+    const text = textarea.value.trim();
+    if (text) {
       textarea.value = "";
       this.state.sendMessage(text);
     }
   }
 
-  handleStarterClick(text) {
-    if (!this.state.isGenerating) {
-      this.state.sendMessage(text);
+  handleTextareaKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      this.handlePromptSubmit(e);
     }
   }
 
   render() {
+    const isSttEnabled = LiteRTConfig.get('voiceStt');
+    const isThinkingEnabled = LiteRTConfig.get('thinkingToggle');
+    const isRagEnabled = LiteRTConfig.get('rag');
+
     return html`
-      <litert-avatar .state=${this.state}></litert-avatar>
-      <div class="chat-messages">
-        ${this.state.messages.length === 0 ? html`
-          <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--text-muted); gap: 12px; opacity: 0.75; text-align: center; padding: 24px;">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--teal);"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <h3 style="margin: 0; color: #ffffff;">LiteRT-LM Local WebGPU Chat</h3>
-            <p style="font-size: 0.85rem; max-width: 320px; margin: 0; line-height: 1.4;">
-              Chat runs 100% locally in your browser with WebGPU acceleration. No data leaves your machine.
-            </p>
-          </div>
-        ` : this.state.messages.map((m, idx) => {
-          const isUser = m.role === "user";
-          return html`
-            <div class="message-bubble ${isUser ? 'user' : 'assistant'}">
-              <span class="message-sender ${isUser ? 'user' : 'assistant'}">
-                ${m.senderName || (isUser ? 'User' : 'Assistant')}
-              </span>
-              
-              <!-- Thought block (CoT) -->
-              ${!isUser && m.thoughtText ? html`
-                <details class="thought-details" ?open=${true}>
-                  <summary class="thought-summary">Thought Process</summary>
-                  <div class="thought-content">
-                    ${m.thoughtText.split('\n').map(p => html`<p>${p}</p>`)}
+      <div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+        
+        <!-- Conversation Cards Timeline -->
+        <div class="chat-scroll-area">
+          ${this.state.messages.length === 0 ? html`
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60%; text-align: center; gap: 12px; color: var(--text-muted);">
+              <div style="font-family: var(--font-serif); font-size: 1.3rem; font-weight: 700; color: var(--text-ink);">
+                LITERT-LM ON-DEVICE TERMINAL
+              </div>
+              <div style="font-size: 0.85rem; max-width: 480px; line-height: 1.6;">
+                Local WebGPU Large Language Model Runner. Model weights compile in your browser memory and execute offline without external network calls.
+              </div>
+              <div class="pilot-lamp-group" style="margin-top: 8px;">
+                <span class="pilot-lamp"><span class="lamp-bulb active"></span> READY</span>
+                <span class="pilot-lamp"><span class="lamp-bulb active"></span> WEBGPU</span>
+                <span class="pilot-lamp"><span class="lamp-bulb active"></span> PRIVACY</span>
+              </div>
+            </div>
+          ` : this.state.messages.map((msg, index) => html`
+            <div class="message-card ${msg.role === 'user' ? 'operator' : 'assistant'}">
+              <div class="message-header">
+                <span>${msg.role === 'user' ? 'OPERATOR // STATION' : `MK-IV // ${msg.senderName || 'ASSISTANT'}`}</span>
+                ${msg.decodeSpeed ? html`<span class="nixie-badge">${msg.decodeSpeed}</span>` : ""}
+              </div>
+
+              ${msg.thoughtText && isThinkingEnabled ? html`
+                <details style="background: var(--bg-inset); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 6px; font-size: 0.82rem;">
+                  <summary style="font-family: var(--font-mono); font-weight: 700; color: var(--amber-dark); cursor: pointer;">
+                    COGNITIVE PROCESS (CoT Reasoning)
+                  </summary>
+                  <div style="margin-top: 6px; font-family: var(--font-mono); color: var(--text-muted); white-space: pre-wrap; line-height: 1.5;">
+                    ${msg.thoughtText}
                   </div>
                 </details>
               ` : ""}
 
-              <!-- Message contents -->
-              <div class="message-content">
-                ${isUser ? html`
-                  <div class="message-user-text">${m.text}</div>
-                ` : html`
-                  <div>${unsafeHTML(marked.parse(m.text || ""))}</div>
-                `}
-              </div>
-
-              <!-- Message footer & action speeds metrics -->
-              <div class="message-actions">
-                ${!isUser && m.decodeSpeed ? html`
-                  <span class="message-stats">
-                    pref: <b>${m.prefillSpeed || '-'}</b>
-                    dec: <b>${m.decodeSpeed || '-'}</b>
-                    tokens: <b>${m.tokensCount || '-'}</b>
-                  </span>
-                ` : ""}
-
-                ${isUser ? html`
-                  <button class="btn-action" @click=${() => this.state.rewindConversation(idx)}>Edit</button>
-                ` : html`
-                  <button class="btn-action" @click=${() => this.state.redoResponse(idx)}>Retry</button>
-                `}
+              <div class="message-body">
+                ${unsafeHTML(marked.parse(msg.text || ""))}
               </div>
             </div>
-          `;
-        })}
-      </div>
-
-      <!-- Quick starter prompts -->
-      ${this.state.messages.length === 0 ? html`
-        <div class="starters-container">
-          <button class="btn-starter" ?disabled=${this.state.isModelLoading || this.state.isGenerating} @click=${() => this.handleStarterClick("Explain WebGPU in simple terms.")}>Explain WebGPU</button>
-          <button class="btn-starter" ?disabled=${this.state.isModelLoading || this.state.isGenerating} @click=${() => this.handleStarterClick("Write a clean HTML page with canvas particle effects.")}>Particle Effect HTML</button>
-          <button class="btn-starter" ?disabled=${this.state.isModelLoading || this.state.isGenerating} @click=${() => this.handleStarterClick("Build a CSS-only glowing button container.")}>CSS Glow Button</button>
+          `)}
         </div>
-      ` : ""}
 
-      <!-- Input timeline row -->
-      <div class="chat-input-container">
-        <button 
-          class="btn ${this.state.isListening ? 'btn-stop' : 'btn-secondary'}" 
-          style="height: 40px; width: 40px; min-width: 40px; padding: 0; border-radius: 8px; margin-bottom: 4px; display: inline-flex; align-items: center; justify-content: center;"
-          title=${this.state.isListening ? "Stop listening" : "Start voice input"}
-          ?disabled=${this.state.isModelLoading || this.state.isGenerating}
-          @click=${() => this.state.toggleListening()}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            ${this.state.isListening ? html`
-              <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
-            ` : html`
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8" y1="23" x2="16" y2="23"/>
-            `}
-          </svg>
-        </button>
+        <!-- Typewriter Ribbon Input Dock -->
+        <div class="typewriter-input-dock">
+          <form class="input-ribbon-row" @submit=${this.handlePromptSubmit}>
+            
+            <div class="typewriter-textarea-wrap">
+              <textarea 
+                id="terminal-prompt-input"
+                class="typewriter-textarea"
+                placeholder="Enter prompt into terminal ribbon... (Press Enter to transmit, Shift+Enter for new line)"
+                @keydown=${this.handleTextareaKeyDown}
+              ></textarea>
+              <div class="ribbon-tag-bar">
+                <span>STATUS: ${this.state.isGenerating ? 'PROCESSING...' : 'AWAITING DISPATCH'}</span>
+                ${isRagEnabled && ragIndex && ragIndex.documents.size > 0 ? html`
+                  <span style="color: var(--amber-dark); font-weight: bold;">RAG ARCHIVES ACTIVE (${ragIndex.documents.size} DOCS)</span>
+                ` : ""}
+              </div>
+            </div>
 
-        <div class="input-textarea-wrapper">
-          <textarea
-            id="chat-input-textarea"
-            aria-label="Chat input message"
-            placeholder=${this.state.isModelLoading ? "Loading model weights..." : (this.state.isListening ? "Listening..." : "Type your message here... (Enter to send)")}
-            ?disabled=${this.state.isModelLoading || this.state.isListening}
-            @keydown=${this._onTextareaKeyDown}
-          ></textarea>
+            <!-- Voice STT Mic Key -->
+            ${isSttEnabled ? html`
+              <button 
+                type="button" 
+                class="btn-typewriter-key"
+                style="${this.state.isListening ? 'background: #dc2626; border-color: #991b1b;' : ''}"
+                @click=${() => this.state.toggleListening()}
+                title="Voice Input"
+              >
+                ${this.state.isListening ? 'REC ●' : 'MIC 🎙'}
+              </button>
+            ` : ""}
+
+            <!-- Transmit Key -->
+            <button 
+              type="submit" 
+              class="btn-typewriter-key"
+              style="background: linear-gradient(180deg, #d97706 0%, #b45309 100%); border-color: #78350f; color: #ffffff;"
+              ?disabled=${this.state.isGenerating}
+            >
+              TRANSMIT ↵
+            </button>
+
+            ${this.state.isGenerating ? html`
+              <button 
+                type="button" 
+                class="btn-typewriter-key"
+                style="background: #dc2626; border-color: #991b1b; color: #ffffff;"
+                @click=${() => this.state.stopGeneration()}
+              >
+                HALT ✕
+              </button>
+            ` : ""}
+
+          </form>
         </div>
-        ${this.state.isGenerating ? html`
-          <button class="btn btn-stop btn-input-send" @click=${() => this.state.stopGeneration()}>Stop</button>
-        ` : html`
-          <button 
-            class="btn btn-primary btn-input-send" 
-            ?disabled=${this.state.isModelLoading || this.state.isListening}
-            @click=${this.handleSend}
-          >
-            Send
-          </button>
-        `}
+
       </div>
     `;
   }
 }
 customElements.define("litert-chat-window", LiteRTChatWindow);
 
-
 /**
- * LiteRTLMChatApp Top-Level Shell Component
- * Coordinates sidebar toggles, headers, overlays, and mounts the conversation context.
+ * LiteRTFeatureSwitchboard Component
+ * Vintage modular patchbay modal for user preferences and feature flags.
  */
-export class LiteRTLMChatApp extends LitElement {
+export class LiteRTFeatureSwitchboard extends LitElement {
   static properties = {
-    isSidebarOpen: { type: Boolean, state: true },
-    state: { type: Object, state: true },
-    editingConvId: { type: String, state: true },
-    editingTitleValue: { type: String, state: true }
+    isOpen: { type: Boolean, state: true }
   };
 
   constructor() {
     super();
-    this.state = new ChatStateManager();
-    this.state.addHost(this);
-    this.isSidebarOpen = false;
-    this.editingConvId = null;
-    this.editingTitleValue = '';
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    const overlay = document.querySelector(".sidebar-right-overlay");
-    if (overlay) {
-      overlay.addEventListener("click", () => {
-        const drawer = document.querySelector(".sidebar-right");
-        drawer?.classList.remove("open");
-        overlay.classList.remove("open");
-      });
-    }
+    this.isOpen = false;
   }
 
   createRenderRoot() {
     return this;
   }
 
-  toggleSidebar() {
-    this.isSidebarOpen = !this.isSidebarOpen;
-    const sidebar = this.querySelector(".sidebar");
-    const overlay = this.querySelector(".sidebar-overlay");
-    if (this.isSidebarOpen) {
-      sidebar?.classList.add("open");
-      overlay?.classList.add("open");
-    } else {
-      sidebar?.classList.remove("open");
-      overlay?.classList.remove("open");
+  toggleFeature(key) {
+    LiteRTConfig.toggle(key);
+    this.requestUpdate();
+  }
+
+  resetDefaults() {
+    LiteRTConfig.reset();
+    this.requestUpdate();
+  }
+
+  copyExportScript() {
+    const script = LiteRTConfig.exportScript();
+    navigator.clipboard.writeText(script).then(() => {
+      alert("Configuration profile script copied to clipboard!");
+    });
+  }
+
+  render() {
+    if (!this.isOpen) return html``;
+
+    const features = LiteRTConfig.getAll();
+
+    return html`
+      <div class="switchboard-overlay" @click=${() => this.isOpen = false}>
+        <div class="switchboard-modal" @click=${(e) => e.stopPropagation()}>
+          
+          <div class="switchboard-header">
+            <div style="font-family: var(--font-serif); font-size: 1.1rem; font-weight: 700; letter-spacing: 0.06em;">
+              MODULAR SWITCHBOARD // FEATURE PREFERENCES
+            </div>
+            <button 
+              style="background: none; border: none; color: #ffffff; font-size: 1.2rem; cursor: pointer;"
+              @click=${() => this.isOpen = false}
+            >✕</button>
+          </div>
+
+          <div class="switchboard-grid">
+            ${Object.keys(DEFAULT_FEATURES).map(key => {
+              const meta = FEATURE_METADATA[key] || { label: key, description: "", category: "System" };
+              const isChecked = Boolean(features[key]);
+              return html`
+                <div class="switchboard-tile" style="cursor: pointer;" @click=${() => this.toggleFeature(key)}>
+                  <div>
+                    <div class="switch-label-title">${meta.label}</div>
+                    <div class="switch-label-desc">${meta.description}</div>
+                  </div>
+                  <div class="toggle-switch-wrapper">
+                    <span class="lamp-bulb ${isChecked ? 'active' : ''}"></span>
+                    <label class="retro-toggle" @click=${(e) => e.stopPropagation()}>
+                      <input 
+                        type="checkbox" 
+                        .checked=${isChecked} 
+                        @change=${() => this.toggleFeature(key)}
+                      />
+                      <span class="retro-toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              `;
+            })}
+          </div>
+
+          <div style="background: var(--bg-inset); border-top: 2px solid var(--border-strong); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+            <button 
+              class="btn-tactile" 
+              @click=${this.resetDefaults}
+            >
+              RESTORE DEFAULTS
+            </button>
+            <div style="display: flex; gap: 8px;">
+              <button 
+                class="btn-tactile" 
+                @click=${this.copyExportScript}
+              >
+                EXPORT SCRIPT 📋
+              </button>
+              <button 
+                class="btn-tactile primary" 
+                @click=${() => this.isOpen = false}
+              >
+                SAVE & CLOSE
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    `;
+  }
+}
+customElements.define("litert-feature-switchboard", LiteRTFeatureSwitchboard);
+
+/**
+ * LiteRTLMChatApp Component
+ * Root App Shell with Vintage Command Header, Analog VU-Meter, and Archives.
+ */
+export class LiteRTLMChatApp extends LitElement {
+  static properties = {
+    isSidebarOpen: { type: Boolean, state: true }
+  };
+
+  constructor() {
+    super();
+    this.isSidebarOpen = false;
+    this.state = window.ChatStateManager ? new window.ChatStateManager() : new ChatStateManager();
+    window.chatApp = this;
+  }
+
+  createRenderRoot() {
+    return this;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.state.addHost(this);
+    this._unsubConfig = LiteRTConfig.subscribe(() => this.requestUpdate());
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._unsubConfig) this._unsubConfig();
+  }
+
+  openSwitchboard() {
+    const switchboard = this.querySelector('litert-feature-switchboard');
+    if (switchboard) {
+      switchboard.isOpen = true;
     }
   }
 
@@ -899,135 +1001,121 @@ export class LiteRTLMChatApp extends LitElement {
     overlay?.classList.toggle("open");
   }
 
-  startNewChat() {
-    this.state.startNewConversation();
-  }
-
-  handleSavedClick(id) {
-    this.state.selectConversation(id);
-  }
-
-  handleDeleteConv(e, id) {
-    e.stopPropagation();
-    this.state.deleteConversation(id);
-  }
-
-  startRename(e, id, title) {
-    e.stopPropagation();
-    this.editingConvId = id;
-    this.editingTitleValue = title;
-    setTimeout(() => {
-      const input = this.querySelector('.rename-input');
-      if (input) {
-        input.focus();
-        input.select();
-      }
-    }, 50);
-  }
-
-  handleRenameKeyDown(e, id) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      this.saveRename(id);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      this.cancelRename();
-    }
-  }
-
-  handleSaveRenameClick(e, id) {
-    e.stopPropagation();
-    this.saveRename(id);
-  }
-
-  handleCancelRenameClick(e) {
-    e.stopPropagation();
-    this.cancelRename();
-  }
-
-  saveRename(id) {
-    if (this.editingConvId === id) {
-      const val = this.editingTitleValue.trim();
-      if (val) {
-        this.state.renameConversation(id, val);
-      }
-      this.cancelRename();
-    }
-  }
-
-  cancelRename() {
-    this.editingConvId = null;
-    this.editingTitleValue = '';
-  }
-
-
   render() {
+    const isLearnMoreEnabled = LiteRTConfig.get('learnMoreDrawer');
+    const needleDeg = Math.min(45, Math.max(-45, -45 + (this.state.liveTokensPerSec / 100) * 90));
+
     return html`
-      <header>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <button class="btn-toggle-sidebar" aria-label="Toggle configurations sidebar" @click=${this.toggleSidebar}>☰</button>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <img src="./assets/LiteRT_Logo_Symbol-only_RGB_Color_Teal.png" alt="LiteRT Logo" style="height: 24px; width: auto;">
-            <div>
-              <h1>LiteRT-LM.js Chat</h1>
-              <div class="header-subtitle">Fully Local WebGPU Inference</div>
+      <!-- Top Command Header -->
+      <header class="terminal-header">
+        <div class="header-left">
+          <div class="brass-plate">
+            <span class="brass-plate-title">LITERT-LM MK-IV</span>
+            <span class="brass-plate-tag">LOCAL TERMINAL</span>
+          </div>
+
+          <div class="header-status-cluster">
+            <div class="model-badge">
+              <span>MODEL:</span>
+              <span style="color: var(--amber-dark);">${this.state.selectedModelPath.split("/").pop() || "READY"}</span>
+            </div>
+
+            <div class="pilot-lamp-group">
+              <span class="pilot-lamp"><span class="lamp-bulb active"></span> PWR</span>
+              <span class="pilot-lamp"><span class="lamp-bulb ${this.state.engine ? 'active' : 'amber'}"></span> MDL</span>
+              <span class="pilot-lamp"><span class="lamp-bulb active"></span> LNK</span>
             </div>
           </div>
         </div>
-        <button class="btn-toggle-learn-more" @click=${this.toggleLearnMore}>Learn More</button>
+
+        <!-- VU-Meter and Actions -->
+        <div style="display: flex; align-items: center; gap: 14px;">
+          
+          <!-- Generation Speedometer / VU-Meter -->
+          <div class="vu-meter-container">
+            <div class="vu-meter-dial">
+              <div class="vu-dial-arc"></div>
+              <div class="vu-needle" style="transform: rotate(${needleDeg}deg);"></div>
+            </div>
+            <div class="vu-readout">
+              <div>${this.state.liveTokensPerSec} TK/S</div>
+              <div style="font-size: 0.55rem; color: #94a3b8;">GEN RATE</div>
+            </div>
+          </div>
+
+          <div class="header-actions">
+            <button 
+              class="btn-tactile" 
+              @click=${this.openSwitchboard}
+              title="Feature Flags & Preferences"
+            >
+              ⚙ CONFIG
+            </button>
+
+            ${isLearnMoreEnabled ? html`
+              <button 
+                class="btn-tactile" 
+                @click=${this.toggleLearnMore}
+                title="Laboratory Manual"
+              >
+                MANUAL ?
+              </button>
+            ` : ""}
+          </div>
+        </div>
       </header>
 
+      <!-- Main Layout -->
       <div class="app-container">
-        <!-- Overlay backdrop for mobile configuration drawer -->
-        <div class="sidebar-overlay" @click=${this.toggleSidebar}></div>
-
-        <!-- Sidebar left panel drawer -->
+        
+        <!-- Left Hardware Rack Sidebar -->
         <aside class="sidebar">
           <litert-sidebar .state=${this.state}></litert-sidebar>
-          
-          <!-- Saved History List -->
-          <div class="control-group" style="display: flex; flex-direction: column; border-top: 1px solid var(--border); padding-top: 8px;">
-            <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;">Saved Conversations</span>
-            <button class="conv-item new-chat-item" @click=${this.startNewChat}>+ New Chat</button>
-            <div class="conversations-list">
-              ${this.state.conversationsList.map(c => {
-                const isActive = this.state.activeSavedConvId === c.id;
-                const isEditing = this.editingConvId === c.id;
-                return html`
-                  <div class="conv-item ${isActive ? 'active' : ''} ${isEditing ? 'editing' : ''}" @click=${() => this.handleSavedClick(c.id)}>
-                    ${isEditing ? html`
-                      <input 
-                        class="rename-input" 
-                        aria-label="Rename conversation"
-                        .value=${this.editingTitleValue}
-                        @click=${(e) => e.stopPropagation()}
-                        @input=${(e) => this.editingTitleValue = e.target.value}
-                        @keydown=${(e) => this.handleRenameKeyDown(e, c.id)}
-                        style="flex: 1; min-width: 0; margin-right: 4px;"
-                      />
-                      <div style="display: flex; gap: 2px;">
-                        <button class="btn-rename-save" title="Save" @click=${(e) => this.handleSaveRenameClick(e, c.id)}>✓</button>
-                        <button class="btn-rename-cancel" title="Cancel" @click=${(e) => this.handleCancelRenameClick(e)}>✕</button>
-                      </div>
-                    ` : html`
-                      <span class="conv-title">${c.title}</span>
-                      <div class="conv-actions">
-                        <button class="btn-rename-conv" title="Rename conversation" @click=${(e) => this.startRename(e, c.id, c.title)}>✎</button>
-                        <button class="btn-delete-conv" title="Delete conversation" @click=${(e) => this.handleDeleteConv(e, c.id)}>✕</button>
-                      </div>
-                    `}
-                  </div>
-                `;
-              })}
+
+          <!-- Conversation Archives Manila Ledger -->
+          <div class="hardware-card" style="margin-top: 8px;">
+            <div class="hardware-card-title">
+              <span>Session Archives</span>
+              <button 
+                class="btn-punch-action" 
+                style="color: var(--sage); border-color: var(--sage);"
+                @click=${() => this.state.startNewConversation()}
+              >
+                + NEW
+              </button>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto;">
+              ${this.state.conversationsList.map(c => html`
+                <div 
+                  style="display: flex; justify-content: space-between; align-items: center; background: ${this.state.activeSavedConvId === c.id ? 'var(--bg-inset)' : 'transparent'}; border: 1px solid var(--border); padding: 4px 8px; border-radius: 2px; cursor: pointer; font-family: var(--font-mono); font-size: 0.7rem;"
+                  @click=${() => this.state.selectConversation(c.id)}
+                >
+                  <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; font-weight: ${this.state.activeSavedConvId === c.id ? '700' : '400'};">
+                    ${c.title}
+                  </span>
+                  <button 
+                    style="background: none; border: none; color: #ef4444; cursor: pointer;"
+                    @click=${(e) => {
+                      e.stopPropagation();
+                      this.state.deleteConversation(c.id);
+                    }}
+                  >✕</button>
+                </div>
+              `)}
             </div>
           </div>
         </aside>
 
         <!-- Main Chat Window timeline panel -->
-        <main class="chat-panel">
+        <main style="flex: 1; display: flex; flex-direction: column; height: 100%; overflow: hidden;">
           <litert-chat-window .state=${this.state}></litert-chat-window>
         </main>
+
       </div>
+
+      <!-- Modular Feature Switchboard Modal -->
+      <litert-feature-switchboard></litert-feature-switchboard>
     `;
   }
 }
@@ -1035,7 +1123,7 @@ customElements.define("litert-lm-chat-app", LiteRTLMChatApp);
 
 /**
  * LiteRTLearnMore Component
- * Renders local educational documentation drawer.
+ * Laboratory manual reference drawer.
  */
 export class LiteRTLearnMore extends LitElement {
   createRenderRoot() {
@@ -1051,33 +1139,39 @@ export class LiteRTLearnMore extends LitElement {
 
   render() {
     return html`
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h2 class="section-title" style="margin: 0; border: none; padding: 0;">Learn More</h2>
-        <button class="btn-dismiss-right-drawer" @click=${this.closeLearnMore}>Done</button>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid var(--border-strong); padding-bottom: 12px;">
+        <div style="font-family: var(--font-serif); font-size: 1.15rem; font-weight: 700; color: var(--text-ink);">
+          LABORATORY MANUAL // SPECIFICATION
+        </div>
+        <button class="btn-tactile" @click=${this.closeLearnMore}>CLOSE ✕</button>
       </div>
-      <div style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 4px; font-size: 0.85rem; line-height: 1.5; color: #cbd5e1;">
+
+      <div style="display: flex; flex-direction: column; gap: 16px; font-size: 0.88rem; line-height: 1.6; color: var(--text-ink);">
         <div>
-          <h3 style="margin-top: 0; color: #ffffff;">About LiteRT-LM.js</h3>
-          <p>
-            LiteRT-LM.js is a zero-dependency, ultra-fast local inference engine that runs Large Language Models directly on your graphics hardware via WebGPU.
+          <h4 style="font-family: var(--font-serif); margin: 0 0 6px 0; color: var(--amber-dark);">1. ARCHITECTURE OVERVIEW</h4>
+          <p style="margin: 0;">
+            LiteRT-LM compiles Large Language Model weights dynamically into GPU shaders using the browser's WebGPU interface. All token generations, KV cache caching, and matrix multiplications run purely on your hardware without server dependencies.
           </p>
         </div>
+
         <div>
-          <h3 style="color: #ffffff;">WebGPU Acceleration</h3>
-          <p>
-            By utilizing the browser's WebGPU API, LiteRT-LM compiles model weights dynamically into GPU shaders, providing high token generation speeds entirely on-device. No data is sent to external servers.
+          <h4 style="font-family: var(--font-serif); margin: 0 0 6px 0; color: var(--amber-dark);">2. DOCUMENT RAG KNOWLEDGE BASE</h4>
+          <p style="margin: 0;">
+            The built-in retrieval engine ingests PDF, Markdown, TXT, CSV, and JSON documents. It chunks text passages using a 400-character window with 100-character overlap, tokenizes across multilingual Unicode alphabets, and ranks passages using Okapi BM25 scores before injecting high-relevance citations into the prompt.
           </p>
         </div>
+
         <div>
-          <h3 style="color: #ffffff;">Local Document RAG</h3>
-          <p>
-            The built-in Retrieval-Augmented Generation (RAG) system tokenizes and indexes text files locally in-memory using TF-IDF. Relevant text snippets are automatically injected into the model prompt when asking questions.
+          <h4 style="font-family: var(--font-serif); margin: 0 0 6px 0; color: var(--amber-dark);">3. OFFLINE WEIGHT PERSISTENCE</h4>
+          <p style="margin: 0;">
+            Model weights are stored in the browser's CacheStorage API under the "litertlm-models" cache container. Once downloaded, models operate completely offline without internet connectivity.
           </p>
         </div>
+
         <div>
-          <h3 style="color: #ffffff;">Model Caching</h3>
-          <p>
-            Models are securely cached using the browser's Cache Storage API. Once downloaded, the application works fully offline.
+          <h4 style="font-family: var(--font-serif); margin: 0 0 6px 0; color: var(--amber-dark);">4. MODULAR FEATURE SYSTEM</h4>
+          <p style="margin: 0;">
+            All system components (Avatar, Voice Audio, Code Sandbox, RAG Hub, Cache Storage) can be dynamically toggled via the CONFIG menu or programmatically through window.LiteRTConfig.
           </p>
         </div>
       </div>

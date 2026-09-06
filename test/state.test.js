@@ -1163,4 +1163,50 @@ test('ChatStateManager Unit Tests', async (t) => {
       global.document.getElementById = originalGetElementById;
     }
   });
+
+  await t.test('loadModelFromFile reads file stream, updates metrics and initializes session', async () => {
+    const state = new ChatStateManager();
+    const mockCore = {
+      SamplerType: { GREEDY: 0, TOP_K: 1, TOP_P: 2 },
+      Engine: {
+        async create() {
+          return {
+            async createConversation() {
+              return {
+                async sendMessageStreaming() {
+                  return { getReader() { return { read() { return { done: true }; } }; } };
+                }
+              };
+            }
+          };
+        }
+      }
+    };
+    state.importCore = async () => mockCore;
+
+    const mockFile = {
+      name: 'gemma-local.litertlm',
+      size: 1048576,
+      stream() {
+        return new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(1048576));
+            controller.close();
+          }
+        });
+      }
+    };
+
+    await state.loadModelFromFile(mockFile);
+    assert.strictEqual(state.isModelLoading, false);
+    assert.ok(state.statusText.includes('Model loaded from local file'));
+    assert.ok(state.engine);
+    assert.ok(state.activeConversation);
+  });
+
+  await t.test('liveTokensPerSec initializes at 0 and is accessible', () => {
+    const state = new ChatStateManager();
+    assert.strictEqual(state.liveTokensPerSec, 0);
+  });
 });
+
