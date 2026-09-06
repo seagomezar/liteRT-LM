@@ -1194,6 +1194,33 @@ export class LiteRTLearnMore extends LitElement {
             All system components (Avatar, Voice Audio, Code Sandbox, RAG Hub, Cache Storage) can be dynamically toggled via the CONFIG menu or programmatically through window.LiteRTConfig.
           </p>
         </div>
+
+        <div>
+          <h4 style="font-family: var(--font-serif); margin: 0 0 6px 0; color: var(--amber-dark);">5. BROWSER FLAGS & WEBGPU REQUIREMENTS</h4>
+          <p style="margin: 0 0 6px 0;">
+            LiteRT-LM requires Chrome or Edge 113+ running in a secure context (HTTPS or localhost). If model shaders fail to compile or WebGPU is not detected:
+          </p>
+          <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; font-family: var(--font-mono);">
+            <li><strong>Hardware Acceleration:</strong> Turn ON "Use graphics acceleration when available" in <code>chrome://settings/system</code>.</li>
+            <li><strong>WebGPU Developer Features:</strong> Enable <code>chrome://flags/#enable-webgpu-developer-features</code> to unlock full WGSL shader subgroup support.</li>
+            <li><strong>GPU Driver Blocklist Bypass:</strong> If your GPU is older, enable <code>chrome://flags/#enable-unsafe-webgpu</code> and <code>chrome://flags/#ignore-gpu-blocklist</code>.</li>
+            <li><strong>WebGPU Status Diagnostics:</strong> Visit <code>chrome://gpu</code> to check if WebGPU status says "Hardware accelerated".</li>
+            <li><strong>Memory (RAM/VRAM):</strong> 4 GB+ RAM is required for Gemma 4 E2B weights (1.9 GB download / cache).</li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 style="font-family: var(--font-serif); margin: 0 0 6px 0; color: var(--amber-dark);">6. INITIAL SYSTEM INITIALIZATION</h4>
+          <p style="margin: 0 0 6px 0;">
+            When you first transmit a message:
+          </p>
+          <ol style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem;">
+            <li>The terminal immediately logs your transmission into the ledger.</li>
+            <li>The system checks CacheStorage for cached weights. If missing, it initiates an automatic download of <code>gemma-4-E2B-it-web.litertlm</code> (~1.9 GB).</li>
+            <li>WebGPU compiles WGSL pipeline shaders. Once compiled, the <code>MDL</code> pilot lamp illuminates green.</li>
+            <li>Alternatively, load pre-downloaded weights offline using the <strong>LOAD LOCAL .LITERTLM FILE</strong> button in the Model Tuner rack.</li>
+          </ol>
+        </div>
       </div>
     `;
   }
