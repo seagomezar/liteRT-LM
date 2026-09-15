@@ -1,57 +1,24 @@
-# Modelos Pequeños, Tooling Adecuado: Por qué el Navegador es el Verdadero Edge AI
-### *De las Built-in APIs de Chrome a Gemma en WebGPU: Construyendo una Estación de IA Privada y a Coste Cero en una Pestaña*
+# Modelos pequeños y buen diseño: la IA en el navegador
 
-Cada semana me cruzo en redes con el mismo titular reciclado: *"10 cosas salvajes que puedes hacer con el modelo X"*.
+Los artículos que prometen diez cosas salvajes que puedes hacer con el último modelo de lenguaje siempre dan por sentada la misma arquitectura: conseguir una clave de API, pagar por cada bloque de tokens y enviar los datos a un servidor remoto. La premisa implícita es que, si no estás consultando un modelo gigante alojado en un centro de datos, no puedes construir nada útil.
 
-Ya nos sabemos la fórmula de memoria. Regístrate, introduce una tarjeta de crédito, canaliza los datos sensibles de tus usuarios a un centro de datos al otro lado del océano, paga por cada millar de tokens y cruza los dedos para que el proveedor cloud no sufra caídas de servicio o modifique sus políticas de privacidad.
+Dejé de creer en esa idea cuando Chrome empezó a incorporar APIs de IA directamente en el navegador. Empezó con Gemini Nano para ofrecer funciones locales a coste cero, y con WebGPU y modelos abiertos como Gemma, la base técnica es mucho más sólida. Con un modelo de unos 2.000 millones de parámetros y una descarga inferior a 2 GB, no necesitas un servidor en la nube.
 
-La narrativa del sector insiste en que, a menos que alquiles un cluster de GPUs industriales para consultar un modelo monolítico cerrado, no puedes construir nada verdaderamente útil.
+Es verdad que un modelo de 2B no razona hoy con la profundidad de los modelos más grandes del mercado. Pero los modelos compactos mejoran con cada generación, y eventualmente alcanzarán la capacidad que hoy vemos en sistemas mucho más pesados. Además, la mayoría de los problemas de software cotidiano no exigen resolver dilemas teóricos complejos; exigen buscar en documentos, estructurar datos, transcribir audio o generar interfaces sencillas.
 
-Dejé de creer en esa premisa en el momento exacto en que Chrome empezó a incorporar APIs de IA directamente en el navegador.
+En esas tareas, los modelos pequeños funcionan bien si se les acompaña con el tooling adecuado y un diseño pensado para ellos.
 
-Comenzó con Gemini Nano para democratizar el acceso a la IA a coste cero. Hoy, gracias a WebGPU y a modelos abiertos como Gemma, el panorama ha cambiado por completo. Con un modelo de ~2B parámetros y un peso de descarga inferior a 1.9 GB, no necesitas ningún cluster en la nube.
+Dejar un modelo pequeño frente a un cuadro de texto en blanco suele terminar en respuestas vagas o alucinadas. La utilidad aparece cuando el navegador asume el trabajo de soporte:
 
-El secreto no radica en acumular miles de millones de parámetros redundantes. **Con modelos pequeños también se puede hacer software de primer nivel, siempre que cuentes con las herramientas adecuadas y un buen diseño.**
+Un motor de recuperación en memoria (RAG) con Okapi BM25 puede segmentar un archivo PDF, un CSV o una nota en texto plano dentro de la memoria RAM del navegador. Cuando el usuario hace una pregunta, el sistema busca los fragmentos relevantes y se los entrega al modelo como contexto directo. La precisión mejora de inmediato y el archivo nunca sale del ordenador del usuario.
 
----
+El canal de audio funciona con las APIs nativas del navegador: transcripción por micrófono y síntesis de voz, sin recurrir a servicios externos de pago. Cuando el modelo genera código en HTML o SVG, un visor en un iframe aislado permite comprobar el resultado visual en el acto.
 
-### Concediendo el Punto al Escéptico
+El peso del modelo ronda los 1,9 GB. Mediante la API CacheStorage del navegador, se descarga una sola vez. A partir de ese momento, la aplicación puede ejecutarse sin conexión a internet.
 
-Afrontemos de inmediato la objeción obvia: *un modelo de 2 mil millones de parámetros no razona hoy como GPT-4o o Claude resolviendo enigmas abstractos.*
+Las herramientas de consola como Ollama son útiles para programadores, pero tienen un límite claro de distribución. Un usuario común en un entorno legal, administrativo o médico no va a abrir un terminal ni a configurar controladores de GPU. El navegador resuelve ese obstáculo: basta con abrir un enlace para que WebGPU aproveche la gráfica local dentro de un entorno seguro, sin instalaciones ni permisos de administrador.
 
-Totalmente de acuerdo. Eso es una realidad hoy. Pero ignora dos factores que cualquier ingeniero de software debería tener presentes:
+Construí el terminal LiteRT-LM MK-IV como un banco de pruebas para reunir estas piezas bajo una interfaz inspirada en instrumental analógico. El código está publicado en GitHub y la aplicación puede probarse directamente en GitHub Pages:
 
-1. **La Trayectoria del Edge Compute:** Lo que hace tres años exigía una granja de servidores, hoy corre en la memoria RAM de un navegador. Lo que hoy se ejecuta en centros de datos remotos, inevitablemente se ejecutará en el silicio del cliente mañana. Los modelos compactos alcanzarán a los gigantes actuales mucho antes de lo que sugiere el consenso.
-2. **Adecuación a la Tarea frente a la Fuerza Bruta:** La mayoría de las aplicaciones reales no necesitan resolver ecuaciones de física cuántica. Necesitan resumir documentos, responder sobre archivos locales, extraer datos estructurados, interactuar por voz y previsualizar código. En esos flujos, un modelo ligero con cero latencia, cero coste de tokens y cero datos saliendo de la máquina supera a una costosa API cloud nueve de cada diez veces.
-
----
-
-### La Clave: Tooling Adecuado + Buen Diseño
-
-Si dejas a un modelo de 2B a solas frente a una caja de texto vacía, tropezará. Pero la inteligencia en el software siempre ha sido un problema de arquitectura, no solo de pesos neuronales. Cuando rodeas a un modelo local compacto con el *tooling* adecuado dentro del cliente, su utilidad práctica se multiplica:
-
-* **RAG en Memoria con Privacidad Absoluta (Okapi BM25):** En lugar de subir PDFs confidenciales, actas o balances a una base de datos vectorial de terceros, procesamos y segmentamos los documentos en la propia memoria RAM mediante ventanas deslizantes con solapamiento. Un motor Okapi BM25 con tokenización multilingüe Unicode localiza con precisión quirúrgica los fragmentos clave y los inyecta en el prompt. Las alucinaciones caen en picado, la precisión se dispara y ni un solo byte abandona el equipo.
-* **Voz Bidireccional sin Facturas de Streaming:** La Web Speech API nativa captura la voz por micrófono en tiempo real, mientras que la síntesis de voz reproduce las respuestas—sincronizadas con la boca de un avatar procedural 2D en canvas. Coste total: 0,00 $.
-* **Sandbox de Código Ejecutable:** Cuando el modelo genera HTML, CSS o SVG, la interfaz te permite pulsar una sola tecla para ejecutarlo e inspeccionarlo al instante dentro de un iframe aislado y seguro.
-* **Permanencia Offline Real:** El modelo de ~1.9 GB se descarga una sola vez por banda ancha. Gracias a la API `CacheStorage` del navegador, las visitas posteriores inician al instante. Puedes apagar el Wi-Fi, abrir la pestaña y trabajar de forma 100% aislada (*air-gapped*).
-
----
-
-### Por qué el Navegador Gana la Batalla de la Distribución
-
-Las herramientas de consola como Ollama o los entornos con Docker son fantásticos para desarrolladores, pero fracasan en la prueba definitiva: la adopción masiva. Los usuarios cotidianos—abogados, médicos, contables, redactores—jamás abrirán un terminal, ni configurarán drivers CUDA, ni depurarán errores de entorno en Python.
-
-El navegador web es el sistema operativo universal.
-
-Envías un enlace. El usuario entra en Chrome o Edge. WebGPU toma el control del hardware gráfico local dentro de un entorno seguro. Cero instalación, cero línea de comandos, cero permisos de administrador.
-
----
-
-### Prueba el Prototipo
-
-Materializamos esta filosofía en el **[Terminal LiteRT-LM MK-IV](https://seagomezar.github.io/liteRT-LM/)**, una estación de trabajo de código abierto con una cuidada estética industrial y analógica.
-
-* 🚀 **Terminal en Vivo**: [https://seagomezar.github.io/liteRT-LM/](https://seagomezar.github.io/liteRT-LM/)
-* 📦 **Código Fuente**: [https://github.com/seagomezar/liteRT-LM](https://github.com/seagomezar/liteRT-LM)
-
-Dejemos de tratar a los modelos locales como meros experimentos de laboratorio. Con las herramientas correctas y un diseño intencionado, el navegador ya está listo para el trabajo de producción.
+- Aplicación: https://seagomezar.github.io/liteRT-LM/
+- Código fuente: https://github.com/seagomezar/liteRT-LM
