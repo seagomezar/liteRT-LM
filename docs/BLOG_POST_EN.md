@@ -1,24 +1,73 @@
 # Small Models and Good Tooling: Running AI in the Browser
 
-Articles that promise ten wild things you can do with the latest language model almost always assume the same architecture: get an API key, pay by the token, and send your data to a remote server. The unspoken assumption is that unless you query a massive model hosted in a datacenter, you cannot build anything useful.
+Technical discourse surrounding modern artificial intelligence almost universally presumes a single infrastructure archetype: obtain an API key, pay by the token block, and transmit all user telemetry to a remote server farm. Commercial literature is saturated with repetitive headlines promising ten wild things you can do with the latest frontier model, while systematically brushing aside operational costs, network latency, and the data governance hazards inherent in relying on rented infrastructure.
 
-I stopped believing that when Chrome started introducing built-in on-device APIs. It began with Gemini Nano to provide local features at zero cost, and with WebGPU and open weights like Gemma, the technical foundation is much firmer. With a model of roughly two billion parameters and a download under two gigabytes, you do not need a cloud server.
+The implicit assumption that nothing useful can be engineered outside a datacenter housing hundreds of billions of parameters is flawed. When Chrome began shipping built-in on-device AI capabilities (first with Gemini Nano and subsequently by standardizing low-level WebGPU access alongside open weights like Gemma), it became clear that the next operational frontier in production software is not merely cloud scaling, but client-side decentralized inference.
 
-A 2B model does not reason with the depth of the largest frontier models today. That is true. But small edge models improve with each iteration, and over time they will reach the capability we see in heavier systems today. More importantly, most day-to-day software problems do not require solving complex theoretical puzzles; they require searching documents, structuring data, transcribing audio, or drafting simple interfaces.
+## Client-Side Architecture: WebGPU and Compact Weights
 
-For those tasks, small models work well when paired with the right tooling and intentional interface design.
+Running a language model inside the browser without server mediation is no longer a theoretical exercise. With compact architectures around two billion parameters (2B) and weight footprints under 1.9 GB, commodity client hardware is capable of sustaining interactive inference at tens of tokens per second.
 
-Leaving a small model alone with an empty text prompt usually leads to vague answers or hallucinations. The practical value appears when the browser handles the supporting work:
+The technical linchpin is WebGPU. Unlike legacy WebGL workarounds, WebGPU directly exposes compute shader pipelines written in WGSL to the underlying GPU or NPU. The LiteRT runtime compiles tensor operations, matrix multiplications, and attention key-value cache (KV-cache) management directly into hardware shaders, all while operating strictly within the security sandbox of the browser tab.
 
-An in-memory retrieval engine using Okapi BM25 can chunk a PDF, CSV, or plain text note directly inside browser RAM. When a user asks a question, the system finds the relevant passages and hands them to the model as direct context. Accuracy improves immediately, and the file never leaves the user's computer.
+![LiteRT-LM MK-IV Analog Terminal](../assets/analog_terminal_final.png)
 
-Audio runs through the browser's native APIs: microphone transcription and speech synthesis, with no external paid services. When the model outputs HTML or SVG, an isolated iframe viewer lets the user verify the visual output on the spot.
+## System Design vs. Raw Parameter Count
 
-The model download is roughly 1.9 GB. Using the browser's CacheStorage API, it downloads only once. From that point on, the application runs entirely offline.
+There is a valid reservation to address: a 2B parameter model does not match the abstract reasoning depth of 70B+ networks or proprietary frontier clusters. When a lightweight model is left facing an unconstrained, empty text area, it frequently outputs generic or hallucinated text.
 
-Terminal tools like Ollama are useful for developers, but they hit a clear distribution ceiling. Everyday users in legal, administrative, or medical settings will not open a command line or debug GPU drivers. The browser removes that barrier: opening a URL is enough for WebGPU to use the local graphics card inside a secure sandbox, with no installation or administrator rights required.
+Yet the overwhelming majority of daily software tasks do not require solving theoretical puzzles. They demand querying user files, extracting structured fields from raw records, transcribing audio notes, validating operational data, or rendering interface mockups for instant review.
 
-I built the LiteRT-LM MK-IV terminal as a working testbed to bring these pieces together in an interface inspired by analog lab instruments. The code is open on GitHub and runs directly on GitHub Pages:
+In these domains, the bottleneck is rarely parameter volume; the real bottleneck is system design. A compact model augmented by structured tooling, localized context injection, and intentional interface boundaries consistently outperforms an over-parameterized cloud model bottlenecked by network requests.
 
-- Live terminal: https://seagomezar.github.io/liteRT-LM/
-- Source code: https://github.com/seagomezar/liteRT-LM
+![Modular Switchboard & Feature Preferences](../assets/terminal_switchboard.png)
+
+## Modularity and Execution Environment Control
+
+During the engineering of the LiteRT-LM MK-IV terminal, a modular system architecture was prioritized. Every functional subsystem (visual rendering, indexation engine, speech pipeline, sandboxed code runner, and offline storage cache) operates cleanly decoupled from the core inference loop.
+
+Through the modular switchboard configuration modal, users can dynamically toggle individual modules to tailor the runtime footprint to their specific hardware capacity:
+
+- **Real-time parameter tuning:** Direct analog-style faders controlling Temperature, Top-K, Top-P, and context window lengths up to 4096 or 8192 tokens.
+- **Live generation telemetry:** Continuous measurement of tokens-per-second (TK/S) throughput generated across the local GPU pipeline.
+- **Sandboxed code execution preview:** Isolated iframe container enforcing secure origins to render and verify model-generated HTML, SVG, or JavaScript instantly.
+- **Native bidirectional voice channel:** Real-time microphone dictation via SpeechRecognition and sentence-level local speech synthesis via SpeechSynthesis, supporting multiple languages with zero third-party API dependencies.
+
+![Document RAG Cabinet](../assets/terminal_rag_cabinet.png)
+
+## In-Memory Document Retrieval: RAG Without Remote Databases
+
+A persistent design misstep in client AI architecture is the assumption that Retrieval-Augmented Generation (RAG) requires remote vector databases, third-party embedding endpoints, or complex backend infrastructure. When handling a single user's working materials (technical manuals, financial balance sheets, legal briefs, or raw datasets), that architecture introduces needless friction and violates strict privacy standards.
+
+The LiteRT-LM RAG Cabinet addresses this by operating an indexation engine directly in browser memory. The workflow operates as follows:
+
+- **Direct multiformat ingestion:** Users drop PDF, Markdown, TXT, CSV, or JSON documents into the terminal without transmitting a single byte over the network.
+- **Structured sliding window chunking:** Content is segmented using a 400-character window with a 100-character overlap to safeguard syntactic continuity across boundaries.
+- **Lexical scoring via Okapi BM25:** The engine computes term frequencies and inverse document frequencies normalized by passage length, ranking candidate chunks with exact mathematical relevance against the prompt query.
+- **High-precision context injection:** Highest-scoring passages are formatted and inserted directly into Gemma's context window. The model does not need to memorize facts; it merely synthesizes and answers based on the retrieved context.
+
+This targeted retrieval structure drastically suppresses hallucinations in compact models, making the system suitable for sensitive medical, legal, or proprietary enterprise records.
+
+![Laboratory Manual & WebGPU Specification](../assets/terminal_laboratory_manual.png)
+
+## Storage Persistence and Air-Gapped Execution
+
+A browser-based AI system cannot expect users to re-download 1.9 GB on every tab visit. LiteRT-LM employs the browser's CacheStorage API under the litertlm-models container to persist binary weights across sessions.
+
+Upon initial initialization, the model weights are retrieved and cached. From that moment forward, the application operates entirely offline. In addition, the system provides a local file loader allowing users to import offline .litertlm binary weight files straight from disk via the File System Access API, facilitating offline experimentation without requiring local HTTP servers.
+
+## The Distribution Advantage: The Web vs. The Terminal
+
+Command-line tools like Ollama or llama.cpp represent significant engineering achievements and are foundational tools for developers. However, their reliance on terminal configuration creates an insurmountable distribution barrier for general enterprise users.
+
+A financial compliance officer, a clinical physician in a rural hospital, or an administrative investigator will not open bash terminals, troubleshoot CUDA path variables, or acquire IT root privileges to run local models. The web browser dissolves this hurdle: navigating to a simple URL executes WebGPU hardware-accelerated models inside a verified, secure sandbox without administrative installations.
+
+## Summary and Project Resources
+
+The future of applied artificial intelligence does not belong solely to opaque, cloud-hosted behemoths billing per token. Combining small open-weight models, native WebGPU acceleration, and intentional interface engineering makes private, zero-marginal-cost edge AI accessible to everyone.
+
+The LiteRT-LM MK-IV terminal is available as an interactive testbed, and its complete source code is public on GitHub:
+
+- **Live Interactive Terminal:** https://seagomezar.github.io/liteRT-LM/
+- **Open Source Repository:** https://github.com/seagomezar/liteRT-LM
+
