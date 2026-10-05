@@ -99,21 +99,21 @@ export class FeatureConfigManager {
   }
 
   get(featureName) {
-    if (!(featureName in this.features)) {
+    if (!Object.hasOwn(this.features, featureName)) {
       return false;
     }
     return Boolean(this.features[featureName]);
   }
 
   set(featureName, isEnabled) {
-    if (featureName in DEFAULT_FEATURES) {
+    if (Object.hasOwn(DEFAULT_FEATURES, featureName)) {
       this.features[featureName] = Boolean(isEnabled);
       this.save();
     }
   }
 
   toggle(featureName) {
-    if (featureName in DEFAULT_FEATURES) {
+    if (Object.hasOwn(DEFAULT_FEATURES, featureName)) {
       this.set(featureName, !this.get(featureName));
       return this.get(featureName);
     }
@@ -123,7 +123,7 @@ export class FeatureConfigManager {
   setMultiple(preferences) {
     if (typeof preferences === "object" && preferences !== null) {
       for (const [key, val] of Object.entries(preferences)) {
-        if (key in DEFAULT_FEATURES) {
+        if (Object.hasOwn(DEFAULT_FEATURES, key)) {
           this.features[key] = Boolean(val);
         }
       }

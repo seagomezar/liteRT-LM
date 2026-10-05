@@ -364,8 +364,9 @@ export class ChatStateManager {
     if (typeof window === 'undefined' || !window.localStorage) return;
     
     if (!this.activeSavedConvId) {
-      const convId = Date.now().toString();
-      const firstMsgText = this.messages[0]?.text || "Untitled Conversation";
+      const convId = Date.now().toString() + '-' + Math.random().toString(36).substring(2, 7);
+      const rawFirst = (this.messages[0]?.text || '').trim();
+      const firstMsgText = rawFirst.length > 0 ? rawFirst : "Untitled Conversation";
       const title = firstMsgText.length > 26 ? firstMsgText.substring(0, 26) + "..." : firstMsgText;
       
       this.activeSavedConvId = convId;
@@ -444,7 +445,7 @@ export class ChatStateManager {
       }
       
       this.isGenerating = false;
-      this.sendMessage(promptText);
+      await this.sendMessage(promptText);
     } catch (err) {
       console.error("[LiteRT-LM] Failed to retry response:", err);
       this.statusText = "Retry failed.";
@@ -863,7 +864,7 @@ export class ChatStateManager {
     const botIndex = this.messages.length - 1;
     
     // 3. Auto-load weights if engine doesn't exist
-    if (!this.engine || !this.activeConversation) {
+    if (!this.engine) {
       this.statusText = "Loading model weights & compiling shaders...";
       this.messages[botIndex].text = "*[Compiling WebGPU shaders & loading model weights...]*";
       this.requestUpdate();
@@ -873,19 +874,36 @@ export class ChatStateManager {
       } catch (loadErr) {
         console.error("[LiteRT-LM] Auto-load weights error:", loadErr);
       }
-
-      if (!this.engine || !this.activeConversation) {
-        this.messages[botIndex].text = `*[Model initialization failed: ${this.statusText || 'Engine not ready'}]*`;
-        this.isGenerating = false;
-        this.commitActiveChatHistory();
-        this.requestUpdate();
-        return;
+    } else if (!this.activeConversation) {
+      try {
+        const litertlm = await this.importCore();
+        this.activeConversation = await this.engine.createConversation({
+          sessionConfig: {
+            maxOutputTokens: this.maxOutputTokens,
+            samplerParams: this.getSamplerParams(litertlm)
+          },
+          preface: {
+            extra_context: {
+              enable_thinking: this.enableThinking
+            }
+          }
+        });
+      } catch (convErr) {
+        console.error("[LiteRT-LM] Failed to re-create conversation session:", convErr);
       }
-
-      // Clear the temporary compilation message once engine is ready
-      this.messages[botIndex].text = "";
-      this.requestUpdate();
     }
+
+    if (!this.engine || !this.activeConversation) {
+      this.messages[botIndex].text = `*[Model initialization failed: ${this.statusText || 'Engine not ready'}]*`;
+      this.isGenerating = false;
+      this.commitActiveChatHistory();
+      this.requestUpdate();
+      return;
+    }
+
+    // Clear the temporary compilation message once engine is ready
+    this.messages[botIndex].text = "";
+    this.requestUpdate();
     
     let accumulatedText = "";
     let accumulatedThought = "";
@@ -982,6 +1000,13 @@ export class ChatStateManager {
         decodeSpeed: `${decodeSpeed} tk/s`,
         tokensCount: tokensCounter.toString()
       };
+      if (this.isCancelled) {
+        accumulatedText += "\n\n*[Generation stopped by user]*";
+        this.messages[botIndex] = {
+          ...this.messages[botIndex],
+          text: accumulatedText
+        };
+      }
       this.statusText = "Generation completed.";
     } catch (err) {
       console.error(err);
@@ -1024,14 +1049,21 @@ export class ChatStateManager {
 
   stopGeneration() {
     this.speechQueue.stop();
-    if (this.isGenerating && this.activeConversation) {
-      this.isCancelled = true;
+    this.isCancelled = true;
+    if (this.isGenerating) {
       try {
         if (this.activeReader) {
           this.activeReader.cancel();
         }
       } catch (_) {}
-      this.activeConversation.cancelProcess();
+      if (this.activeConversation) {
+        try {
+          this.activeConversation.cancelProcess();
+        } catch (_) {}
+      }
+      this.isGenerating = false;
+      this.statusText = "Generation stopped.";
+      this.requestUpdate();
     }
   }
 
@@ -1191,7 +1223,11 @@ export class ChatStateManager {
   }
 
   async importCore() {
-    return await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.13.1/+esm');
+    try {
+      return await import('@litert-lm/core');
+    } catch (_) {
+      return await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.13.1/+esm');
+    }
   }
 
   addLog(message) {

@@ -1150,6 +1150,25 @@ export class LiteRTLearnMore extends LitElement {
     return this;
   }
 
+  connectedCallback() {
+    super.connectedCallback();
+    this._handleOverlayClick = () => this.closeLearnMore();
+    setTimeout(() => {
+      const overlay = document.querySelector(".sidebar-right-overlay");
+      if (overlay) {
+        overlay.addEventListener("click", this._handleOverlayClick);
+      }
+    }, 0);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    const overlay = document.querySelector(".sidebar-right-overlay");
+    if (overlay && this._handleOverlayClick) {
+      overlay.removeEventListener("click", this._handleOverlayClick);
+    }
+  }
+
   closeLearnMore() {
     const drawer = document.querySelector(".sidebar-right");
     const overlay = document.querySelector(".sidebar-right-overlay");

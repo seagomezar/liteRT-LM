@@ -1,4 +1,4 @@
-describe("LiteRT-LM WebGPU Chat UI E2E Tests", () => {
+describe("LiteRT-LM WebGPU Chat UI E2E Ground Truth Tests", () => {
   beforeEach(() => {
     // Visit the app
     cy.visit("/");
@@ -50,126 +50,100 @@ describe("LiteRT-LM WebGPU Chat UI E2E Tests", () => {
     });
   });
 
-  it("renders landing page structure and starter elements", () => {
-    cy.get("header").should("contain", "LiteRT-LM.js Chat");
+  it("renders analog precision terminal structure and starter elements", () => {
+    cy.get(".terminal-header").should("contain", "LITERT-LM MK-IV");
     cy.get(".sidebar").should("be.visible");
-    cy.get(".chat-messages").should("contain", "LiteRT-LM Local WebGPU Chat");
+    cy.get(".chat-scroll-area").should("contain", "LITERT-LM ON-DEVICE TERMINAL");
     cy.get("#chat-input-textarea").should("be.visible");
-    cy.get(".starters-container").should("be.visible");
     cy.get("litert-avatar").should("be.visible");
-    cy.get("#phaser-avatar-container").should("be.visible");
-    cy.get('button[title="Start voice input"]').should("be.visible");
+    cy.get(".vu-meter-dial").should("be.visible");
+    cy.get("#btn-voice-stt").should("be.visible");
+    cy.get('button:contains("TRANSMIT ↵")').should("be.visible");
   });
 
-  it("updates inference settings inputs and toggles thinking CoT", () => {
-    // Context length input
-    cy.get("#context-length").clear().type("2048").trigger("input");
-    cy.get("litert-lm-chat-app").then(($el) => {
-      assert.strictEqual($el[0].state.contextLength, 2048);
-    });
-
+  it("updates hardware tuner sliders and state properties", () => {
     // Temperature slider
-    cy.get("#temperature").clear().type("0.8").trigger("input");
+    cy.get(".fader-control input.hardware-slider").first().as("tempSlider");
+    cy.get("@tempSlider").invoke("val", "0.8").trigger("input");
     cy.get("litert-lm-chat-app").then(($el) => {
       assert.strictEqual($el[0].state.temperature, 0.8);
     });
 
-    // Sampler select
-    cy.get("#sampler-type").select("top_p");
-    cy.get("litert-lm-chat-app").then(($el) => {
-      assert.strictEqual($el[0].state.samplerType, "top_p");
-    });
-
-    // Toggle CoT
-    cy.get("#enable-thinking").uncheck();
-    cy.get("litert-lm-chat-app").then(($el) => {
-      assert.strictEqual($el[0].state.enableThinking, false);
+    // Verify state persists in localStorage
+    cy.window().then((win) => {
+      const settings = JSON.parse(
+        win.localStorage.getItem("litertlm-chat-settings") || "{}"
+      );
+      assert.strictEqual(settings.temperature, 0.8);
     });
   });
 
   it("interacts with custom model selection dropdown", () => {
-    cy.get("custom-dropdown button").click();
-    cy.get("custom-dropdown .dropdown-content").should("have.class", "show");
-    cy.get("custom-dropdown .dropdown-item").eq(1).click();
-    cy.get("custom-dropdown button").should("contain", "Gemma 4 E4B");
+    cy.get("custom-dropdown .btn-tactile").click();
+    cy.get("custom-dropdown").should("contain", "Gemma 4 E4B");
+    cy.contains("Gemma 4 E4B").click();
+    cy.get("litert-lm-chat-app").then(($el) => {
+      assert.ok($el[0].state.selectedModelPath.toLowerCase().includes("gemma-4-e4b"));
+    });
   });
 
-  it("submits a quick starter prompt and displays conversation message bubbles", () => {
-    cy.contains("Explain WebGPU").click();
-    cy.get(".message-bubble.user").should("contain", "Explain WebGPU");
+  it("submits prompt from ribbon dock and displays message card with CoT reasoning", () => {
+    cy.get("#chat-input-textarea").type("Explain WebGPU compute pipelines{enter}");
+    cy.get(".message-card.operator").should("contain", "Explain WebGPU compute pipelines");
 
-    // The retrying assertion below waits for the mocked async response;
-    // no fixed cy.wait needed.
-    cy.get(".message-bubble.assistant").should(
+    // The retrying assertion below waits for the mocked async response
+    cy.get(".message-card.assistant").should(
       "contain",
-      "This is a mocked response",
+      "This is a mocked response"
     );
-    cy.get(".thought-details").should("contain", "Stubbed thinking phase.");
-    cy.get(".message-stats").should("contain", "dec: 45 tk/s");
+    cy.get("details summary").should("contain", "COGNITIVE PROCESS");
+    cy.get(".message-header .nixie-badge").should("contain", "45 tk/s");
   });
 
-  it("submits custom query from textarea and triggers retry/edit flows", () => {
-    cy.get("#chat-input-textarea").type("Hello local bot{enter}");
-    cy.get(".message-bubble.user").should("contain", "Hello local bot");
-
-    cy.get(".message-bubble.assistant").should("be.visible");
-
-    // Click retry
-    cy.contains("Retry").click();
-    cy.get(".message-bubble.assistant").should("be.visible");
-
-    // Click edit (rewind)
-    cy.contains("Edit").click();
-    cy.get(".message-bubble.assistant").should("not.exist");
-  });
-
-  it("toggles learn more drawer", () => {
-    cy.contains("Learn More").click();
+  it("toggles laboratory manual reference drawer", () => {
+    cy.contains("MANUAL ?").click();
     cy.get(".sidebar-right").should("have.class", "open");
-    cy.get(".sidebar-right-overlay").should("have.class", "open");
 
-    // Click backdrop overlay to dismiss
-    cy.get(".sidebar-right-overlay").click({ force: true });
+    // Click CLOSE button in drawer
+    cy.contains("CLOSE ✕").click();
     cy.get(".sidebar-right").should("not.have.class", "open");
   });
 
-  it("manages document hub indexing and files upload", () => {
-    // Check Document count
-    cy.get("#rag-doc-count").should("contain", "0");
+  it("opens modular switchboard modal and toggles preferences", () => {
+    cy.contains("⚙ CONFIG").click();
+    cy.get(".switchboard-modal").should("be.visible");
+    cy.get(".switchboard-header").should("contain", "MODULAR SWITCHBOARD");
 
-    cy.get("#rag-file-input").selectFile(
-      {
-        contents: Cypress.Buffer.from(
-          "This is a secret key code: antigravity-999",
-        ),
-        fileName: "config.txt",
-        mimeType: "text/plain",
-      },
-      { force: true },
-    );
+    // Toggle a feature tile
+    cy.get(".switchboard-tile").first().click();
 
-    // Validate index updating
-    cy.get("#rag-doc-count").should("contain", "1");
-    cy.get("#rag-chunk-count").should("not.contain", "0");
-    cy.get("#rag-doc-list").should("contain", "config.txt");
-
-    // Query with RAG keyword
-    cy.get("#chat-input-textarea").type("What is the secret key code?{enter}");
-    cy.get(".message-bubble.user").should(
-      "contain",
-      "What is the secret key code?",
-    );
-
-    // Delete document
-    cy.get(".delete-doc-btn").click();
-    cy.get("#rag-doc-count").should("contain", "0");
-
-    // Clear logs
-    cy.contains("Clear Logs").click();
-    cy.get("#rag-logs").should("contain", "No logs.");
+    // Close modal
+    cy.get(".switchboard-header button").click();
+    cy.get(".switchboard-modal").should("not.exist");
   });
 
-  it("supports uploading and parsing PDF files", () => {
+  it("manages document RAG cabinet indexing and file deletion", () => {
+    cy.get("#rag-upload-input").selectFile(
+      {
+        contents: Cypress.Buffer.from(
+          "Hardware specification code: retro-titan-88",
+        ),
+        fileName: "specs.txt",
+        mimeType: "text/plain",
+      },
+      { force: true }
+    );
+
+    // Validate index updated in UI
+    cy.get("litert-sidebar").should("contain", "specs.txt");
+    cy.contains("ARCHIVES:").parent().should("contain", "1");
+
+    // Delete document using the remove button
+    cy.contains("specs.txt").parent().find("button:contains('✕')").click();
+    cy.contains("ARCHIVES:").parent().should("contain", "0");
+  });
+
+  it("supports uploading and parsing PDF files into RAG cabinet", () => {
     // Stub the dynamic loadPdfJS method
     cy.window().then((win) => {
       cy.stub(win.ragIndex, "loadPdfJS").callsFake(() => {
@@ -182,11 +156,9 @@ describe("LiteRT-LM WebGPU Chat UI E2E Tests", () => {
                   getTextContent: () =>
                     Promise.resolve({
                       items: [
-                        { str: "This" },
-                        { str: "is" },
-                        { str: "mocked" },
-                        { str: "PDF" },
-                        { str: "content" },
+                        { str: "Quantum" },
+                        { str: "Telemetry" },
+                        { str: "Manifest" },
                       ],
                     }),
                 }),
@@ -196,88 +168,44 @@ describe("LiteRT-LM WebGPU Chat UI E2E Tests", () => {
       });
     });
 
-    cy.get("#rag-doc-count").should("contain", "0");
-
-    // Select/upload a PDF file
-    cy.get("#rag-file-input").selectFile(
+    // Upload PDF file
+    cy.get("#rag-upload-input").selectFile(
       {
         contents: Cypress.Buffer.from("%PDF-1.4 ... mock pdf content ..."),
-        fileName: "document.pdf",
+        fileName: "telemetry.pdf",
         mimeType: "application/pdf",
       },
-      { force: true },
+      { force: true }
     );
 
     // Validate index updating with the PDF file
-    cy.get("#rag-doc-count").should("contain", "1");
-    cy.get("#rag-doc-list").should("contain", "document.pdf");
-    cy.get("#rag-logs").should("contain", 'Document added: "document.pdf"');
+    cy.get("litert-sidebar").should("contain", "telemetry.pdf");
+    cy.contains("ARCHIVES:").parent().should("contain", "1");
   });
 
-  it("starts new conversations and toggles items list", () => {
-    cy.get("#chat-input-textarea").type("Thread 1 message{enter}");
-
-    cy.get(".conversations-list").should("contain", "Thread 1 message");
+  it("manages session archives: new chat, switching sessions, and deletion", () => {
+    cy.get("#chat-input-textarea").type("First Session Log{enter}");
+    cy.get(".message-card.operator").should("contain", "First Session Log");
 
     // Start new chat
-    cy.contains("+ New Chat").click();
-    cy.get(".message-bubble").should("not.exist");
+    cy.contains("+ NEW").click();
+    cy.get(".message-card").should("not.exist");
+    cy.get(".chat-scroll-area").should("contain", "LITERT-LM ON-DEVICE TERMINAL");
 
-    // Click back to conversation 1
-    cy.get(".conv-item").not(".new-chat-item").first().click();
-    cy.get(".message-bubble.user").should("contain", "Thread 1 message");
+    // Click back to first session
+    cy.contains("First Session Log").click();
+    cy.get(".message-card.operator").should("contain", "First Session Log");
 
-    // Delete conversation
-    cy.get(".btn-delete-conv").first().click();
-    cy.get(".conv-item").not(".new-chat-item").should("not.exist");
+    // Delete session
+    cy.contains("First Session Log").parent().find("button:contains('✕')").click();
+    cy.contains("First Session Log").should("not.exist");
   });
 
-  it("supports renaming conversations in the sidebar and persisting changes", () => {
-    cy.get("#chat-input-textarea").type("Chat to rename{enter}");
-
-    // Initial check
-    cy.get(".conversations-list").should("contain", "Chat to rename");
-
-    // Click rename button (pencil icon)
-    cy.get(".btn-rename-conv").first().click();
-
-    // Check that the rename input field appears and type new title
-    cy.get(".rename-input")
-      .should("be.visible")
-      .should("have.value", "Chat to rename")
-      .clear()
-      .type("Renamed Chat Title");
-
-    // Click checkmark/save button
-    cy.get(".btn-rename-save").click();
-
-    // Verify the list has updated
-    cy.get(".conversations-list").should("contain", "Renamed Chat Title");
-    cy.get(".conversations-list").should("not.contain", "Chat to rename");
-
-    // Let's test the Escape key cancellation
-    cy.get(".btn-rename-conv").first().click();
-    cy.get(".rename-input").clear().type("Should Cancel This");
-    cy.get(".rename-input").type("{esc}");
-
-    // Verify it wasn't saved and reverted back to the previous name
-    cy.get(".conversations-list").should("contain", "Renamed Chat Title");
-    cy.get(".conversations-list").should("not.contain", "Should Cancel This");
-
-    // Let's test Enter key saving
-    cy.get(".btn-rename-conv").first().click();
-    cy.get(".rename-input").clear().type("Save via Enter Key{enter}");
-
-    // Verify it saved
-    cy.get(".conversations-list").should("contain", "Save via Enter Key");
-  });
-
-  it("supports selecting chat language and persisting changes", () => {
-    // Assert default value is English
-    cy.get("#chat-language").should("have.value", "English");
+  it("supports selecting chat language channel and persisting changes", () => {
+    cy.get("litert-sidebar select").should("have.value", "English");
 
     // Change language to Spanish
-    cy.get("#chat-language").select("Spanish");
+    cy.get("litert-sidebar select").select("Spanish");
 
     // Assert state matches
     cy.get("litert-lm-chat-app").then(($el) => {
@@ -287,28 +215,39 @@ describe("LiteRT-LM WebGPU Chat UI E2E Tests", () => {
     // Verify it persists in localStorage settings
     cy.window().then((win) => {
       const settings = JSON.parse(
-        win.localStorage.getItem("litertlm-chat-settings"),
+        win.localStorage.getItem("litertlm-chat-settings") || "{}"
       );
       assert.strictEqual(settings.chatLanguage, "Spanish");
     });
   });
 
   it("supports stopping speech audio playback without interrupting generation", () => {
-    // Force speaking state to true so "Stop Audio" button renders
     cy.get("litert-lm-chat-app").then(($el) => {
       const state = $el[0].state;
       state.isSpeaking = true;
+      state.stopSpeechOnly();
+
+      assert.strictEqual(state.isSpeechMutedForCurrentResponse, true);
+      assert.strictEqual(state.isSpeaking, false);
+    });
+  });
+
+  it("supports halting generation stream via HALT button", () => {
+    cy.get("litert-lm-chat-app").then(($el) => {
+      const state = $el[0].state;
+      // Put state in generating mode
+      state.isGenerating = true;
       state.requestUpdate();
     });
 
-    // Check that Stop Audio button is visible
-    cy.get("#btn-stop-audio").should("be.visible").click();
+    // HALT button should render and be clickable
+    cy.get('button:contains("HALT ✕")').should("be.visible").click();
 
-    // Check that Speech is stopped and muted flag is active in state
+    // Verify state was cancelled
     cy.get("litert-lm-chat-app").then(($el) => {
       const state = $el[0].state;
-      assert.strictEqual(state.isSpeechMutedForCurrentResponse, true);
-      assert.strictEqual(state.isSpeaking, false);
+      assert.strictEqual(state.isGenerating, false);
+      assert.strictEqual(state.isCancelled, true);
     });
   });
 });

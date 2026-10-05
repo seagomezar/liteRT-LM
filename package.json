@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node server.js",
     "test": "node --test test/*.test.js",
-    "test:e2e": "start-server-and-test dev http://localhost:5173 \"cypress run\""
+    "test:e2e": "node test/run_e2e.js"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "cypress": "^15.18.0",
+    "fast-check": "^4.10.2",
     "start-server-and-test": "^2.0.0"
   }
 }
